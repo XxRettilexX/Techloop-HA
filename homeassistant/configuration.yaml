@@ -1,0 +1,67 @@
+# Loads default set of integrations. Do not remove.
+default_config:
+
+# Initialize cloud integration manually to suppress translation warnings
+cloud:
+
+# Load frontend themes from the themes folder
+frontend:
+  themes: !include_dir_merge_named themes
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml
+
+http:
+  use_x_forwarded_for: true
+  trusted_proxies:
+    - 172.28.0.0/24
+
+mqtt:
+  sensor:
+    - name: "Boiler Water Temperature"
+      state_topic: "otgw/status/boiler_temp"
+      unit_of_measurement: "°C"
+      icon: mdi:thermometer
+
+    - name: "Return Water Temperature"
+      state_topic: "otgw/status/return_temp"
+      unit_of_measurement: "°C"
+      icon: mdi:thermometer-chevron-down
+
+    - name: "Water Pressure"
+      state_topic: "otgw/status/pressure"
+      unit_of_measurement: "bar"
+      icon: mdi:gauge
+
+    - name: "Flame Modulation"
+      state_topic: "otgw/status/modulation"
+      unit_of_measurement: "%"
+      icon: mdi:fire
+
+  binary_sensor:
+    - name: "Flame Status"
+      state_topic: "otgw/status/flame"
+      payload_on: "ON"
+      payload_off: "OFF"
+      icon: mdi:fire-alert
+
+  climate:
+    - name: "OpenTherm Boiler Control"
+      unique_id: ot_boiler_main
+      # We simulate a thermostat controlling the water setpoint directly
+      modes:
+        - "heat"
+        - "off"
+      mode_command_topic: "otgw/mode/set"
+      mode_state_topic: "otgw/mode/state"
+      payload_on: "ON"
+      payload_off: "OFF"
+
+      # Temperature Control (Water Setpoint)
+      temperature_command_topic: "otgw/setpoint/set"
+      temperature_state_topic: "otgw/setpoint/state"
+      min_temp: 30
+      max_temp: 80
+      precision: 0.5
+      temp_step: 1

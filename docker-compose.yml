@@ -1,0 +1,97 @@
+version: "3.8"
+
+networks:
+  digital_twin_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+
+services:
+  # 1. Broker MQTT Centrale
+  mqtt_broker:
+    image: eclipse-mosquitto:latest
+    container_name: mqtt_broker
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.20
+
+  # 2. Home Assistant Control Unit
+  homeassistant:
+    image: "ghcr.io/home-assistant/home-assistant:stable"
+    container_name: homeassistant
+    restart: unless-stopped
+    volumes:
+      - ./homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "8123:8123"
+    environment:
+      - TZ=Europe/Rome
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.10
+    depends_on:
+      - mqtt_broker
+
+  # 3. Flussi di Automazione
+  n8n:
+    image: n8nio/n8n
+    container_name: n8n_automation
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=172.28.0.30
+    volumes:
+      - ./n8n/data:/home/node/.n8n
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.30
+
+  # 4. Local AI Inference
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama_llm
+    restart: unless-stopped
+    volumes:
+      - ./ollama/data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.40
+
+  # 5. OpenTherm Physical Simulator (OT-Thing)
+  ot_simulator:
+    build: ./ot_simulator
+    container_name: ot_simulator
+    restart: unless-stopped
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.50
+    depends_on:
+      - mqtt_broker
+
+  # 6. MCP Bridge for LLM Agents
+  mcp_server:
+    build: ./mcp_server
+    container_name: mcp_server
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      - HA_URL=http://172.28.0.10:8123
+      # Token to be injected or configured in .env
+      - HA_TOKEN=REPLACE_ME_WITH_REAL_LONG_LIVED_TOKEN
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.60
+    depends_on:
+      - homeassistant
