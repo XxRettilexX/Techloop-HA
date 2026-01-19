@@ -50,7 +50,6 @@ mqtt:
       max_temp: 30
       precision: 0.1# Home Assistant (HA) e l'Integrazione MQTT
 **Ruolo nel progetto:** Gestione, Automazione e Interfaccia Utente.
-
 ## Cos'è Home Assistant
 Home Assistant è una piattaforma open-source che centralizza il controllo dei dispositivi domotici, garantendo privacy e controllo locale. In questo progetto, funge da interfaccia tra l'utente e la caldaia.
 

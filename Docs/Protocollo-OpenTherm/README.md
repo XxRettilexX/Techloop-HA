@@ -15,7 +15,6 @@ OpenTherm (OT) è uno standard di comunicazione aperto e non proprietario, creat
 
 ### 1.3 Il Ruolo di OpenTherm nel Progetto
 La caldaia "parla" solo OpenTherm. Per integrarla in un sistema domotico, è indispensabile un gateway o adattatore che faccia da traduttore fisico e logico tra il protocollo OT e la rete domestica (IP/MQTT).
-
 ---
 
 ## 2. IL GATEWAY: LOGICA SULL'ESP32

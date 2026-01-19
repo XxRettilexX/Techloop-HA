@@ -9,7 +9,6 @@
 Questo documento riunisce e organizza le informazioni tecniche e progettuali provenienti da tre fonti distinte, con l'obiettivo di delineare una soluzione completa per il monitoraggio e il controllo "smart" di una caldaia domestica. La soluzione prevede l'integrazione del protocollo OpenTherm con la piattaforma di domotica Home Assistant, attraverso l'utilizzo di un gateway hardware basato su ESP32 e del protocollo di comunicazione MQTT.
 
 ---
-
 ## 1. INTRODUZIONE AL PROGETTO
 
 ### 1.1 Obiettivo Primario
