@@ -224,3 +224,4 @@ homeassistant/.cloud/
 homeassistant/.ha_run.lock
 homeassistant/.HA_VERSION
 
+.github/
