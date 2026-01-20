@@ -15,39 +15,69 @@ scene: !include scenes.yaml
 http:
   use_x_forwarded_for: true
   trusted_proxies:
-    - 172.28.0.0/24
+    - 0.0.0.0/0
+    - ::/0
 
 mqtt:
   sensor:
-    - name: "Boiler Water Temperature"
+    - name: "Temperatura Acqua Caldaia"
       state_topic: "otgw/status/boiler_temp"
       unit_of_measurement: "°C"
       icon: mdi:thermometer
 
-    - name: "Return Water Temperature"
+    - name: "Temperatura Acqua Ritorno"
       state_topic: "otgw/status/return_temp"
       unit_of_measurement: "°C"
       icon: mdi:thermometer-chevron-down
 
-    - name: "Water Pressure"
+    - name: "Pressione Acqua"
       state_topic: "otgw/status/pressure"
       unit_of_measurement: "bar"
       icon: mdi:gauge
 
-    - name: "Flame Modulation"
+    - name: "Modulazione Fiamma"
       state_topic: "otgw/status/modulation"
       unit_of_measurement: "%"
       icon: mdi:fire
 
+    - name: "Temperatura Interna"
+      state_topic: "home/sensor/indoor_temp"
+      unit_of_measurement: "°C"
+      icon: mdi:home-thermometer
+
   binary_sensor:
-    - name: "Flame Status"
+    - name: "Stato Fiamma"
       state_topic: "otgw/status/flame"
       payload_on: "ON"
       payload_off: "OFF"
       icon: mdi:fire-alert
 
+    - name: "Finestra Soggiorno"
+      state_topic: "home/binary_sensor/window_living"
+      payload_on: "OPEN"
+      payload_off: "CLOSED"
+      device_class: window
+
+    - name: "Finestra Camera da Letto"
+      state_topic: "home/binary_sensor/window_bedroom"
+      payload_on: "OPEN"
+      payload_off: "CLOSED"
+      device_class: window
+
+    - name: "Finestra Cameretta"
+      state_topic: "home/binary_sensor/window_small_bedroom"
+      payload_on: "OPEN"
+      payload_off: "CLOSED"
+      device_class: window
+
+    - name: "Finestra Bagno"
+      state_topic: "home/binary_sensor/window_bathroom"
+      payload_on: "OPEN"
+      payload_off: "CLOSED"
+      device_class: window
+
   climate:
-    - name: "OpenTherm Boiler Control"
+    - name: "Controllo Caldaia OpenTherm"
       unique_id: ot_boiler_main
       # We simulate a thermostat controlling the water setpoint directly
       modes:
@@ -65,3 +95,64 @@ mqtt:
       max_temp: 80
       precision: 0.5
       temp_step: 1
+
+# Simulators switches for Dashboard
+input_boolean:
+  sim_window_living:
+    name: Finestra Soggiorno (Sim)
+    icon: mdi:window-closed-variant
+  sim_window_bedroom:
+    name: Finestra Camera (Sim)
+    icon: mdi:window-closed-variant
+  sim_window_small_bedroom:
+    name: Finestra Cameretta (Sim)
+    icon: mdi:window-closed-variant
+  sim_window_bathroom:
+    name: Finestra Bagno (Sim)
+    icon: mdi:window-closed-variant
+
+input_select:
+  boiler_season_mode:
+    name: Modalità Stagione Caldaia
+    options:
+      - Inverno ❄️
+      - Estate ☀️
+    icon: mdi:sun-snowflake
+
+rest_command:
+  query_ollama:
+    url: "http://172.28.0.40:11434/api/generate"
+    method: POST
+    content_type: "application/json"
+    payload: >-
+      {
+        "model": "llama3.2",
+        "prompt": "{{ prompt |  replace('\"', '\\\"') }}",
+        "stream": false,
+        "format": "json"
+      }
+
+input_text:
+  ultimo_report_boiler:
+    name: Ultimo Report Boiler
+    icon: mdi:file-document-outline
+    max: 255
+
+template:
+  - sensor:
+      - name: "Forecast Casa Temperature"
+        unit_of_measurement: "°C"
+        state: >
+          {{ state_attr('weather.home', 'temperature') | float(0) }}
+
+      - name: "Forecast Casa Humidity"
+        unit_of_measurement: "%"
+        state: >
+          {{ state_attr('weather.home', 'humidity') | float(0) }}
+
+  - sensor:
+      - name: "Temperatura Interna Simulata"
+        unit_of_measurement: "°C"
+        state: >
+          {% set temp_ext = states('sensor.forecast_casa_temperature') | float(10) %}
+          {{ (temp_ext + 10) | round(1) }}

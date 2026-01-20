@@ -1,1 +1,340 @@
-[]
+- id: "llm_ottimizzazione_temperatura_caldaia"
+  alias: "LLM - Regolazione Temperatura Caldaia Ottimale"
+  description: "LLM calcola temperatura ideale caldaia in base a meteo e utilizzo"
+  trigger:
+    - platform: time
+      at:
+        - "05:30:00" # Prima del risveglio
+        - "14:00:00" # Pomeriggio
+        - "19:00:00" # Sera
+    - platform: numeric_state
+      entity_id: sensor.forecast_casa_temperature
+      below: 12 # Se fa più freddo del previsto
+  condition:
+    - condition: state
+      entity_id: input_select.boiler_season_mode
+      state: "Inverno ❄️"
+  action:
+    - variables:
+        ore_serali: >
+          {{ "SI" if now().hour >= 18 else "NO" }}
+
+        differenza_temp: >
+          {% set temp_caldaia = states('sensor.temperatura_acqua_caldaia') | float(0) %}
+          {% set temp_ritorno = states('sensor.temperatura_acqua_ritorno') | float(0) %}
+          {{ (temp_caldaia - temp_ritorno) | round(1) }}
+
+        efficienza_fiamma: >
+          {% set modulazione = states('sensor.modulazione_fiamma') | float(0) %}
+          {% if modulazione > 80 %}
+            "Fiamma alta - possibile sovraccarico"
+          {% elif modulazione < 30 %}
+            "Fiamma bassa - efficienza ottimale"
+          {% else %}
+            "Fiamma media - regime normale"
+          {% endif %}
+
+    - service: rest_command.query_ollama
+      data:
+        prompt: >
+          OTTIMIZZAZIONE TEMPERATURA CALDAIA OPENTHERM
+
+          DATI ATTUALI:
+          - Temperatura caldaia impostata: {{ state_attr('climate.controllo_caldaia_opentherm', 'temperature') }}°C
+          - Temperatura ritorno: {{ states('sensor.temperatura_acqua_ritorno') }}°C
+          - Differenza ΔT: {{ differenza_temp }}°C (ideale: 10-20°C)
+          - Modulazione fiamma: {{ states('sensor.modulazione_fiamma') }}%
+          - Efficienza: {{ efficienza_fiamma }}
+          - Pressione acqua: {{ states('sensor.pressione_acqua') }} bar
+
+          CONTESTO ESTERNO:
+          - Temperatura esterna: {{ states('sensor.forecast_casa_temperature') }}°C
+          - Umidità: {{ states('sensor.forecast_casa_humidity') }}%
+          - Ora: {{ now().strftime('%H:%M') }}
+          - Periodo: {{ "SERA" if ore_serali == "SI" else "GIORNATA" }}
+
+          CONSIGLI TECNICI:
+          - ΔT > 20°C: Caldaia lavora troppo
+          - ΔT < 10°C: Difficile riscaldamento
+          - Modulazione >80%: Ridurre temperatura
+          - Modulazione <30%: Aumentare temperatura
+
+          DOMANDA:
+          Quale temperatura dovrei impostare sulla caldaia?
+
+          Rispondi SOLO con un JSON valido: {"target_temperature": XX} dove XX è il valore consigliato (max 80, min 30).
+          Esempio: {"target_temperature": 55}
+      response_variable: ollama_response
+
+    - variables:
+        consiglio_temperatura: "{{ (ollama_response['content'] | from_json)['response'] | from_json }}"
+
+    - service: climate.set_temperature
+      target:
+        entity_id: climate.controllo_caldaia_opentherm
+      data:
+        temperature: "{{ consiglio_temperatura['target_temperature'] }}"
+
+- id: "llm_monitoraggio_salute_boiler"
+  alias: "LLM - Monitoraggio Salute Boiler"
+  description: "Analisi parametri boiler per manutenzione preventiva"
+  trigger:
+    - platform: numeric_state
+      entity_id: sensor.pressione_acqua
+      below: 1.2
+    - platform: numeric_state
+      entity_id: sensor.pressione_acqua
+      above: 2.0
+    - platform: numeric_state
+      entity_id: sensor.temperatura_acqua_ritorno
+      above: 50
+  mode: queued
+  max: 10
+  action:
+    - service: rest_command.query_ollama
+      data:
+        prompt: >
+          DIAGNOSTICA BOILER - PARAMETRI ANOMALI
+
+          PARAMETRO CRITICO RILEVATO:
+          - Pressione: {{ states('sensor.pressione_acqua') }} bar (Normale: 1.2-2.0)
+          - Ritorno: {{ states('sensor.temperatura_acqua_ritorno') }}°C
+
+          ALTRI PARAMETRI:
+          - Temperatura boiler: {{ states('sensor.temperatura_acqua_caldaia') }}°C
+          - Modulazione fiamma: {{ states('sensor.modulazione_fiamma') }}%
+
+          ANALISI RICHIESTA:
+          1. Problema probabile?
+          2. Urgenza?
+
+          Rispondi SOLO con un JSON:
+          {"problema": "descrizione", "gravita": "Bassa/Media/Alta", "azione": "cosa fare"}
+      response_variable: ollama_response
+
+    - variables:
+        diagnosi: "{{ (ollama_response['content'] | from_json)['response'] | from_json }}"
+
+    - if:
+        condition: template
+        value_template: '{{ diagnosi["gravita"] in ["Alta", "Critica"] }}'
+      then:
+        - service: notify.persistent_notification
+          data:
+            title: "⚠️ Allarme Boiler: {{ diagnosi['gravita'] }}"
+            message: >
+              {{ diagnosi['problema'] }}
+
+              Azione richiesta: {{ diagnosi['azione'] }}
+
+- id: "llm_report_settimanale_boiler"
+  alias: "LLM - Report Settimanale Boiler"
+  description: "Analisi consumi e suggerimenti ottimizzazione"
+  trigger:
+    - platform: time
+      at: "20:00:00" # Ogni sera alle 20:00 per monitoraggio giornaliero in fase di test
+  action:
+    - service: rest_command.query_ollama
+      data:
+        prompt: >
+          REPORT GIORNALIERO BOILER
+
+          DATI:
+          - Temperatura esterna attuale: {{ states('sensor.forecast_casa_temperature') }}°C
+          - Pressione attuale: {{ states('sensor.pressione_acqua') }} bar
+
+          Analizza brevemente la situazione.
+          Restituisci JSON: {"report": "testo del report", "suggerimenti": ["consiglio 1", "consiglio 2"]}
+      response_variable: ollama_response
+
+    - variables:
+        report_data: "{{ (ollama_response['content'] | from_json)['response'] | from_json }}"
+
+    - service: input_text.set_value
+      target:
+        entity_id: input_text.ultimo_report_boiler
+      data:
+        value: "{{ report_data['report'][:250] }}" # Taglio per evitare overflow
+
+    - service: notify.persistent_notification
+      data:
+        title: "📈 Report Boiler"
+        message: >
+          {{ report_data['report'] }}
+
+          Consigli:
+          {{ report_data['suggerimenti'] | join('\n- ') }}
+
+- id: "llm_monitoraggio_realtime_efficienza"
+  alias: "LLM - Monitoraggio Real-time Efficienza"
+  description: "Controlla continuamente efficienza boiler"
+  trigger:
+    - platform: state
+      entity_id: sensor.modulazione_fiamma
+      for:
+        minutes: 30
+  condition:
+    - condition: template
+      value_template: >
+        {{ states('sensor.modulazione_fiamma') | float(0) > 85 or
+           states('sensor.modulazione_fiamma') | float(0) < 25 }}
+  action:
+    - service: rest_command.query_ollama
+      data:
+        prompt: >
+          ALLERTA EFFICIENZA
+
+          Stato Fiamma anomalo da 30 min: {{ states('sensor.modulazione_fiamma') }}%
+          Temp Caldaia: {{ states('sensor.temperatura_acqua_caldaia') }}°C
+
+          Cosa fare? Rispondi con JSON: {"consiglio": "breve frase su cosa fare"}
+      response_variable: ollama_response
+
+    - variables:
+        azione: "{{ (ollama_response['content'] | from_json)['response'] | from_json }}"
+
+    - service: notify.persistent_notification
+      data:
+        title: "🎯 Ottimizzazione Efficienza"
+        message: "{{ azione['consiglio'] }}"
+
+- id: "season_mode_manager"
+  alias: "Season Mode Manager"
+  description: "Switch boiler mode based on Season selection"
+  trigger:
+    - platform: state
+      entity_id: input_select.boiler_season_mode
+  action:
+    - choose:
+        # ESTATE -> Spegni riscaldamento
+        - conditions:
+            - condition: state
+              entity_id: input_select.boiler_season_mode
+              state: "Estate ☀️"
+          sequence:
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: climate.opentherm_boiler_control
+              data:
+                hvac_mode: "off"
+            - service: notify.persistent_notification
+              data:
+                message: "Modalità Estate attivata. Riscaldamento spento."
+
+        # INVERNO -> Accendi riscaldamento
+        - conditions:
+            - condition: state
+              entity_id: input_select.boiler_season_mode
+              state: "Inverno ❄️"
+          sequence:
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: climate.opentherm_boiler_control
+              data:
+                hvac_mode: "heat"
+            - service: notify.persistent_notification
+              data:
+                message: "Modalità Inverno attivata. L'AI ottimizzerà la temperatura."
+
+- id: "smart_thermostat_control"
+  alias: "Smart Thermostat Control (Windows & Temp)"
+  description: "Controls heating based on indoor temp (18-20°C) and window state"
+  trigger:
+    - platform: state
+      entity_id: sensor.temperatura_interna_simulata
+    - platform: state
+      entity_id:
+        - binary_sensor.finestra_soggiorno
+        - binary_sensor.finestra_camera_da_letto
+        - binary_sensor.finestra_cameretta
+        - binary_sensor.finestra_bagno
+    - platform: state
+      entity_id: input_select.boiler_season_mode
+      to: "Inverno ❄️"
+  condition:
+    - condition: state
+      entity_id: input_select.boiler_season_mode
+      state: "Inverno ❄️"
+  action:
+    - choose:
+        # CASE 1: Any window is OPEN -> Turn OFF Heating immediately
+        - conditions:
+            - condition: or
+              conditions:
+                - condition: state
+                  entity_id: binary_sensor.finestra_soggiorno
+                  state: "on"
+                - condition: state
+                  entity_id: binary_sensor.finestra_camera_da_letto
+                  state: "on"
+                - condition: state
+                  entity_id: binary_sensor.finestra_cameretta
+                  state: "on"
+                - condition: state
+                  entity_id: binary_sensor.finestra_bagno
+                  state: "on"
+          sequence:
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: climate.controllo_caldaia_opentherm
+              data:
+                hvac_mode: "off"
+            - service: notify.persistent_notification
+              data:
+                title: "Riscaldamento Sospeso"
+                message: "Rilevata finestra aperta. Caldaia spenta per risparmio."
+                notification_id: "window_open_alert"
+
+        # CASE 2: All windows CLOSED -> Check Temperature
+        - conditions:
+            # Implicitly: Windows are closed (default via choose logic, but safer to assume)
+            - condition: numeric_state
+              entity_id: sensor.temperatura_interna_simulata
+              below: 18.0
+          sequence:
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: climate.controllo_caldaia_opentherm
+              data:
+                hvac_mode: "heat"
+            - service: notify.persistent_notification
+              data:
+                message: "Temperatura < 18°C. Riscaldamento ACCESO."
+                notification_id: "heating_status"
+
+        - conditions:
+            - condition: numeric_state
+              entity_id: sensor.temperatura_interna_simulata
+              above: 20.0
+          sequence:
+            - service: climate.set_hvac_mode
+              target:
+                entity_id: climate.controllo_caldaia_opentherm
+              data:
+                hvac_mode: "off"
+            - service: notify.persistent_notification
+              data:
+                message: "Temperatura > 20°C. Riscaldamento SPENTO."
+                notification_id: "heating_status"
+
+- id: "simulation_windows_sync"
+  alias: "Simulate Windows (Sync to MQTT)"
+  description: "Publishes MQTT messages when simulation switches are toggled"
+  trigger:
+    - platform: state
+      entity_id:
+        - input_boolean.sim_window_living
+        - input_boolean.sim_window_bedroom
+        - input_boolean.sim_window_small_bedroom
+        - input_boolean.sim_window_bathroom
+  action:
+    - service: mqtt.publish
+      data:
+        topic: >-
+          {% if trigger.entity_id == 'input_boolean.sim_window_living' %}home/binary_sensor/window_living
+          {% elif trigger.entity_id == 'input_boolean.sim_window_bedroom' %}home/binary_sensor/window_bedroom
+          {% elif trigger.entity_id == 'input_boolean.sim_window_small_bedroom' %}home/binary_sensor/window_small_bedroom
+          {% elif trigger.entity_id == 'input_boolean.sim_window_bathroom' %}home/binary_sensor/window_bathroom
+          {% endif %}
+        payload: "{{ 'OPEN' if trigger.to_state.state == 'on' else 'CLOSED' }}"
+        retain: true
