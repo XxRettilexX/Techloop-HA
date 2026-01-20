@@ -225,3 +225,4 @@ homeassistant/.ha_run.lock
 homeassistant/.HA_VERSION
 
 .github/
+RELAZIONE_TEST_LABORATORIO.md
