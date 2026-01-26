@@ -113,3 +113,36 @@ services:
     depends_on:
       - homeassistant
       - ollama
+
+  # 8. Window Simulator (Virtual Sensors)
+  window_simulator:
+    build: ./window_simulator
+    container_name: window_simulator
+    restart: unless-stopped
+    environment:
+      - MQTT_BROKER=172.28.0.20
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.80
+    depends_on:
+      - mqtt_broker
+
+  # 9. AI Chatbot with Ollama NLU
+  chatbot:
+    build: ./chatbot
+    container_name: chatbot
+    restart: unless-stopped
+    ports:
+      - "8003:8000"
+    environment:
+      - HA_URL=http://172.28.0.10:8123
+      - HA_TOKEN=REPLACE_ME_WITH_REAL_LONG_LIVED_TOKEN
+      - OLLAMA_URL=http://172.28.0.40:11434
+      - BOILER_AI_URL=http://172.28.0.70:8000
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.90
+    depends_on:
+      - homeassistant
+      - ollama
+      - boiler_ai
