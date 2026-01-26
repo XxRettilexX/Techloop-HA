@@ -9,8 +9,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from guardrail import SecurityGuardrail, CommandValidationRequest, CommandValidationResponse
-from maintenance import MaintenanceAnalyzer, MaintenanceReport
+from src.guardrail import SecurityGuardrail, CommandValidationRequest, CommandValidationResponse
+from src.maintenance import MaintenanceAnalyzer, MaintenanceReport
 
 logging.basicConfig(
     level=logging.INFO,

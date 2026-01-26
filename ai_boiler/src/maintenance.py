@@ -151,7 +151,9 @@ class MaintenanceAnalyzer:
         Returns:
             List of SensorData points
         """
-        end_time = datetime.now()
+        from datetime import timezone
+        
+        end_time = datetime.now(timezone.utc)
         start_time = end_time - timedelta(hours=hours)
         
         async with httpx.AsyncClient() as client:
@@ -169,7 +171,17 @@ class MaintenanceAnalyzer:
                 
                 data = response.json()
                 
-                if not data or not data[0]:
+                # Check if data is valid
+                if not data:
+                    logger.warning(f"No data returned for {entity_id}")
+                    return []
+                
+                if not isinstance(data, list) or len(data) == 0:
+                    logger.warning(f"Invalid data format for {entity_id}")
+                    return []
+                
+                if not data[0]:
+                    logger.warning(f"Empty data array for {entity_id}")
                     return []
                 
                 sensor_data = []
@@ -177,9 +189,18 @@ class MaintenanceAnalyzer:
                     try:
                         # Parse state value (skip non-numeric states)
                         value = float(state["state"])
-                        timestamp = datetime.fromisoformat(state["last_changed"].replace("Z", "+00:00"))
+                        # Handle timezone-aware and naive datetimes
+                        timestamp_str = state["last_changed"]
+                        if timestamp_str.endswith("Z"):
+                            timestamp_str = timestamp_str[:-1] + "+00:00"
+                        try:
+                            timestamp = datetime.fromisoformat(timestamp_str)
+                        except ValueError:
+                            # Fallback for other formats
+                            timestamp = datetime.now()
                         sensor_data.append(SensorData(timestamp=timestamp, value=value))
-                    except (ValueError, KeyError):
+                    except (ValueError, KeyError, TypeError) as parse_error:
+                        logger.debug(f"Skipping invalid data point: {parse_error}")
                         continue
                 
                 logger.info(f"Fetched {len(sensor_data)} data points for {entity_id}")
@@ -282,9 +303,9 @@ class MaintenanceAnalyzer:
             if history[i].value != history[i-1].value:
                 state_changes += 1
         
-        # Calculate cycles per day
-        days = hours / 24
-        cycles_per_day = state_changes / days if days > 0 else 0
+        # Calculate cycles per day (protect against division by zero)
+        days = max(hours / 24, 0.1)  # Minimum 0.1 to avoid division by zero
+        cycles_per_day = state_changes / days
         
         if cycles_per_day > self.CYCLE_COUNT_THRESHOLD:
             anomalies.append(AnomalyReport(

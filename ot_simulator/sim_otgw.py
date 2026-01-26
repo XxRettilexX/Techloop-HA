@@ -18,9 +18,9 @@ COOLING_RATE = 0.1  # Deg per tick natural loss
 
 # --- State Variables ---
 state = {
-    "boiler_temp": 40.0,
-    "return_temp": 35.0,
-    "setpoint": 50.0,
+    "boiler_temp": 20.0,  # Start at room temperature
+    "return_temp": 20.0,  # Start at room temperature
+    "setpoint": 20.0,     # Safe default setpoint (below 25°C limit)
     "modulation": 0.0,
     "pressure": 1.5,
     "flame_on": False,
