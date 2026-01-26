@@ -95,3 +95,21 @@ services:
         ipv4_address: 172.28.0.60
     depends_on:
       - homeassistant
+
+  # 7. AI Boiler Security & Maintenance Service
+  boiler_ai:
+    build: ./ai_boiler
+    container_name: boiler_ai
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+    environment:
+      - HA_URL=http://172.28.0.10:8123
+      - HA_TOKEN=REPLACE_ME_WITH_REAL_LONG_LIVED_TOKEN
+      - OLLAMA_URL=http://172.28.0.40:11434
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.70
+    depends_on:
+      - homeassistant
+      - ollama
