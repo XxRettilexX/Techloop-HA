@@ -79,6 +79,20 @@ services:
     depends_on:
       - mqtt_broker
 
+  # 5b. Thermal Simulator (Home Heating Physics)
+  thermal_simulator:
+    build: ./thermal_simulator
+    container_name: thermal_simulator
+    restart: unless-stopped
+    environment:
+      - MQTT_BROKER=172.28.0.20
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.55
+    depends_on:
+      - mqtt_broker
+      - ot_simulator
+
   # 6. MCP Bridge for LLM Agents
   mcp_server:
     build: ./mcp_server
