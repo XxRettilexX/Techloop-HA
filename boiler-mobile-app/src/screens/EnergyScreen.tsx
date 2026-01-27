@@ -4,13 +4,23 @@ import { StatusBar } from 'expo-status-bar';
 import { EnergyBarChart, EnergyTipsCard } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme';
 import { Zap } from 'lucide-react-native';
+import { useEnergyData } from '../contexts/DataContext';
 
 export const EnergyScreen: React.FC = () => {
+    const { energyData } = useEnergyData();
+
     const energyTips = [
         'Lower the temperature by 1°C to save up to 10% energy',
         'Your boiler is most efficient between 60-70°C water temperature',
         'Consider scheduling lower temps when windows are open',
     ];
+
+    // Calculate savings percentage
+    const savingsPercent = energyData.previousMonth > 0
+        ? ((energyData.previousMonth - energyData.currentMonth) / energyData.previousMonth * 100).toFixed(1)
+        : '0.0';
+
+    const savedAmount = Math.abs(energyData.previousMonth - energyData.currentMonth) * 0.15; // €0.15 per kWh
 
     return (
         <SafeAreaView style={styles.container}>
@@ -32,7 +42,7 @@ export const EnergyScreen: React.FC = () => {
                 </View>
 
                 {/* Energy Chart */}
-                <EnergyBarChart currentMonth={145} previousMonth={168} />
+                <EnergyBarChart currentMonth={energyData.currentMonth} previousMonth={energyData.previousMonth} />
 
                 {/* Energy Tips */}
                 <EnergyTipsCard tips={energyTips} />
@@ -40,11 +50,11 @@ export const EnergyScreen: React.FC = () => {
                 {/* Stats Overview */}
                 <View style={styles.statsContainer}>
                     <View style={styles.statCard}>
-                        <Text style={styles.statValue}>-13.7%</Text>
+                        <Text style={styles.statValue}>{savingsPercent}%</Text>
                         <Text style={styles.statLabel}>vs Last Month</Text>
                     </View>
                     <View style={styles.statCard}>
-                        <Text style={styles.statValue}>€23</Text>
+                        <Text style={styles.statValue}>€{savedAmount.toFixed(0)}</Text>
                         <Text style={styles.statLabel}>Saved</Text>
                     </View>
                 </View>
