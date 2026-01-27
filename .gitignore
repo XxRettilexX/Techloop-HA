@@ -229,3 +229,5 @@ RELAZIONE_TEST_LABORATORIO.md
 
 # Deployment scripts
 start.sh
+
+.agent/
