@@ -11,11 +11,19 @@ import {
     ModeType,
 } from '../components';
 import { COLORS, SPACING } from '../theme';
+import { useBoilerStatus, useRoomStatus, useWindowSensors } from '../contexts/DataContext';
 
 export const DashboardScreen: React.FC = () => {
-    const [targetTemp, setTargetTemp] = useState(21);
+    const { boilerStatus } = useBoilerStatus();
+    const { roomStatus, setTargetTemp } = useRoomStatus();
+    const { windowSensors } = useWindowSensors();
+
     const [isBoostActive, setIsBoostActive] = useState(false);
     const [activeMode, setActiveMode] = useState<ModeType | null>(null);
+
+    const handleTempChange = async (temp: number) => {
+        await setTargetTemp(temp);
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -26,21 +34,21 @@ export const DashboardScreen: React.FC = () => {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Status Banner */}
-                <StatusBanner status="active" message="System running normally" />
+                <StatusBanner status={boilerStatus.flameOn ? "active" : "idle"} message={boilerStatus.flameOn ? "Sistema attivo" : "Sistema in standby"} />
 
                 {/* Central Dial - Hero Component */}
                 <CentralDial
-                    currentTemp={20.5}
-                    targetTemp={targetTemp}
-                    onTempChange={setTargetTemp}
+                    currentTemp={roomStatus.currentTemp}
+                    targetTemp={roomStatus.targetTemp}
+                    onTempChange={handleTempChange}
                 />
 
                 {/* Boiler Status */}
                 <BoilerStatusCard
-                    waterTemp={65.3}
-                    pressure={1.5}
-                    modulation={75}
-                    flameOn={true}
+                    waterTemp={boilerStatus.waterTemp}
+                    pressure={boilerStatus.pressure}
+                    modulation={boilerStatus.modulation}
+                    flameOn={boilerStatus.flameOn}
                 />
 
                 {/* Hot Water */}
@@ -73,9 +81,13 @@ export const DashboardScreen: React.FC = () => {
 
                 {/* Window Sensors */}
                 <View style={styles.sensorsContainer}>
-                    <WindowSensorBadge roomName="Living Room" isOpen={false} />
-                    <WindowSensorBadge roomName="Bedroom" isOpen={true} />
-                    <WindowSensorBadge roomName="Kitchen" isOpen={false} />
+                    {windowSensors.map((sensor) => (
+                        <WindowSensorBadge
+                            key={sensor.id}
+                            roomName={sensor.name}
+                            isOpen={sensor.isOpen}
+                        />
+                    ))}
                 </View>
             </ScrollView>
         </SafeAreaView>

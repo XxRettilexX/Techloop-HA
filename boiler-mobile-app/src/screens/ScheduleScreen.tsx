@@ -4,15 +4,10 @@ import { StatusBar } from 'expo-status-bar';
 import { ScheduleTimeline, Schedule } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme';
 import { Calendar } from 'lucide-react-native';
+import { useSchedules } from '../contexts/DataContext';
 
 export const ScheduleScreen: React.FC = () => {
-    // Demo schedule data
-    const schedules: Schedule[] = [
-        { id: '1', time: '06:00', temperature: 22, active: true },
-        { id: '2', time: '09:00', temperature: 19, active: true },
-        { id: '3', time: '17:00', temperature: 21, active: true },
-        { id: '4', time: '22:00', temperature: 18, active: true },
-    ];
+    const { schedules } = useSchedules();
 
     return (
         <SafeAreaView style={styles.container}>
