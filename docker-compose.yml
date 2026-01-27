@@ -160,3 +160,44 @@ services:
       - homeassistant
       - ollama
       - boiler_ai
+
+  # 10. PocketBase Database
+  pocketbase:
+    build: ./pocketbase
+    container_name: pocketbase_db
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./pocketbase/pb_data:/pb/pb_data
+      - ./pocketbase/pb_migrations:/pb/pb_migrations
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.110
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 11. Mobile & Web API Service
+  mobile_api:
+    build: ./mobile_api
+    container_name: mobile_api
+    restart: unless-stopped
+    ports:
+      - "8004:8000"
+    environment:
+      - HA_URL=http://172.28.0.10:8123
+      - HA_TOKEN=REPLACE_ME_WITH_REAL_LONG_LIVED_TOKEN
+      - CHATBOT_URL=http://172.28.0.90:8003
+      - AI_SERVICE_URL=http://172.28.0.70:8002
+      - POCKETBASE_URL=http://172.28.0.110:8090
+    networks:
+      digital_twin_net:
+        ipv4_address: 172.28.0.100
+    depends_on:
+      - homeassistant
+      - chatbot
+      - boiler_ai
+      - pocketbase

@@ -1,0 +1,36 @@
+{
+  "name": "boiler-mobile-app",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@react-navigation/bottom-tabs": "^7.10.1",
+    "@react-navigation/native": "^7.1.28",
+    "@react-navigation/stack": "^7.6.16",
+    "@reduxjs/toolkit": "^2.11.2",
+    "axios": "^1.13.3",
+    "expo": "^54.0.32",
+    "expo-av": "~16.0.8",
+    "expo-linear-gradient": "^15.0.8",
+    "expo-speech": "~14.0.8",
+    "expo-status-bar": "~3.0.9",
+    "lucide-react-native": "^0.563.0",
+    "paho-mqtt": "^1.1.0",
+    "react": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-screens": "^4.20.0",
+    "react-native-svg": "^15.12.1",
+    "react-redux": "^9.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.1.0",
+    "typescript": "~5.9.2"
+  },
+  "private": true
+}
