@@ -57,24 +57,23 @@ class BoilerChatbot:
     async def extract_intent(self, user_message: str) -> Dict[str, Any]:
         """Use Ollama to extract intent from user message"""
         
-        prompt = f"""Sei un assistente per il controllo di una caldaia smart. Analizza il messaggio dell'utente ed estrai l'intento.
+        prompt = f"""SYSTEM: Sei un'IA di controllo per una caldaia. NON rispondere a domande generali, NON scrivere codice, NON dare consigli non legati alla caldaia.
+Devi SOLO convertire il messaggio utente in un JSON strutturato.
 
-Messaggio utente: "{user_message}"
+COMANDO UTENTE: "{user_message}"
 
-Rispondi SOLO con un JSON valido nel seguente formato:
+REGOLE DI SICUREZZA:
+- Se l'utente chiede codice, script, o aiuto tecnico generico -> action: "unknown"
+- Se l'utente chiede meteo, notizie, o chat libera -> action: "unknown"
+- Se l'utente parla di altro (cucina, sport, ecc) -> action: "unknown"
+- Accetta SOLO: temperatura, accensione/spegnimento, stato, pressione.
+
+RISPONDI SOLO CON QUESTO JSON:
 {{
   "action": "set_temperature" | "get_status" | "turn_on" | "turn_off" | "unknown",
-  "value": <numero temperatura se applicabile, altrimenti null>,
+  "value": <numero float o null>,
   "confidence": <0.0-1.0>
-}}
-
-Esempi:
-- "Imposta a 22 gradi" → {{"action": "set_temperature", "value": 22.0, "confidence": 0.95}}
-- "Alza la temperatura" → {{"action": "set_temperature", "value": null, "confidence": 0.7}}
-- "Quale è la temperatura?" → {{"action": "get_status", "value": null, "confidence": 0.9}}
-- "Spegni la caldaia" → {{"action": "turn_off", "value": null, "confidence": 0.95}}
-
-Rispondi SOLO con il JSON, nient'altro:"""
+}}"""
 
         try:
             async with httpx.AsyncClient() as client:
@@ -85,11 +84,13 @@ Rispondi SOLO con il JSON, nient'altro:"""
                         "prompt": prompt,
                         "stream": False,
                         "options": {
-                            "temperature": 0.1,
-                            "num_predict": 100
+                            "temperature": 0.0,    # Deterministic = faster
+                            "num_predict": 64,     # Max tokens limit for speed
+                            "top_k": 10,           # Limit search space
+                            "top_p": 0.5
                         }
                     },
-                    timeout=30.0
+                    timeout=10.0  # Reduced timeout
                 )
                 
                 if response.status_code == 200:
