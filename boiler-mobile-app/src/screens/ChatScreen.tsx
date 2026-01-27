@@ -8,9 +8,9 @@ import {
     FlatList,
     KeyboardAvoidingView,
     Platform,
-    SafeAreaView,
     ActivityIndicator,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Send, Mic, MicOff } from 'lucide-react-native';
 import { chatService, type ChatMessage } from '../services/ChatService';
@@ -183,6 +183,7 @@ export const ChatScreen: React.FC = () => {
                 keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
             >
                 <View style={styles.inputContainer}>
+                    {/* Voice recording temporarily disabled due to expo-av deprecation
                     <TouchableOpacity
                         style={[styles.voiceButton, isRecording && styles.voiceButtonActive]}
                         onPress={handleVoiceInput}
@@ -194,6 +195,7 @@ export const ChatScreen: React.FC = () => {
                             <Mic size={24} color={COLORS.primary} />
                         )}
                     </TouchableOpacity>
+                    */}
 
                     <TextInput
                         style={styles.input}

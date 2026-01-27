@@ -2,7 +2,6 @@
  * Voice Service - Speech-to-Text and Text-to-Speech
  */
 import * as Speech from 'expo-speech';
-import { Audio } from 'expo-av';
 
 export interface VoiceSettings {
     ttsEnabled: boolean;
@@ -12,7 +11,7 @@ export interface VoiceSettings {
 }
 
 class VoiceService {
-    private recording: Audio.Recording | null = null;
+    private recording: any = null;
     private settings: VoiceSettings = {
         ttsEnabled: true,
         language: 'it-IT',
@@ -24,28 +23,31 @@ class VoiceService {
      * Request microphone permissions
      */
     async requestPermissions(): Promise<boolean> {
-        try {
-            const { status } = await Audio.requestPermissionsAsync();
-            return status === 'granted';
-        } catch (error) {
-            console.error('Error requesting audio permissions:', error);
-            return false;
-        }
+        // Recording/permissions are disabled due to expo-av deprecation.
+        // Keep API surface for future STT implementation.
+        return false;
     }
 
     /**
      * Start recording audio
+     * TEMPORARILY DISABLED: expo-av is deprecated and causing errors in SDK 54
      */
     async startRecording(): Promise<void> {
+        throw new Error('Voice recording temporarily disabled. expo-av is deprecated in SDK 54.');
+
+        /* COMMENTED OUT DUE TO EXPO-AV DEPRECATION ERRORS
         try {
             const hasPermission = await this.requestPermissions();
             if (!hasPermission) {
                 throw new Error('Microphone permission not granted');
             }
 
+            // Set audio mode with explicit boolean values
             await Audio.setAudioModeAsync({
                 allowsRecordingIOS: true,
                 playsInSilentModeIOS: true,
+                staysActiveInBackground: false,
+                shouldDuckAndroid: false,
             });
 
             const { recording } = await Audio.Recording.createAsync(
@@ -58,12 +60,17 @@ class VoiceService {
             console.error('Failed to start recording:', error);
             throw error;
         }
+        */
     }
 
     /**
      * Stop recording and get URI
+     * TEMPORARILY DISABLED: expo-av is deprecated
      */
     async stopRecording(): Promise<string | null> {
+        return null;
+
+        /* COMMENTED OUT DUE TO EXPO-AV DEPRECATION
         try {
             if (!this.recording) {
                 return null;
@@ -79,6 +86,7 @@ class VoiceService {
             console.error('Failed to stop recording:', error);
             return null;
         }
+        */
     }
 
     /**

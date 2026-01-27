@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, ScrollView, View, SafeAreaView, Text } from 'react-native';
+import { StyleSheet, ScrollView, View, Text } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { EnergyBarChart, EnergyTipsCard } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY } from '../theme';

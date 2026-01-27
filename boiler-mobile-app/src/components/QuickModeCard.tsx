@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { Home, Plane, Leaf, LucideIcon } from 'lucide-react-native';
+import { Home, Plane, Leaf } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
 
 export type ModeType = 'away' | 'vacation' | 'eco';
@@ -12,7 +12,7 @@ interface QuickModeCardProps {
     onPress: () => void;
 }
 
-const getModeIcon = (mode: ModeType): typeof LucideIcon => {
+const getModeIcon = (mode: ModeType) => {
     switch (mode) {
         case 'away':
             return Home;

@@ -5,11 +5,11 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    SafeAreaView,
     ActivityIndicator,
     KeyboardAvoidingView,
     Platform,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';

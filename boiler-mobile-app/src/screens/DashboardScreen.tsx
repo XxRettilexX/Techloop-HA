@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { StyleSheet, ScrollView, View, SafeAreaView } from 'react-native';
+import { StyleSheet, ScrollView, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
     CentralDial,
@@ -34,7 +35,7 @@ export const DashboardScreen: React.FC = () => {
                 showsVerticalScrollIndicator={false}
             >
                 {/* Status Banner */}
-                <StatusBanner status={boilerStatus.flameOn ? "active" : "idle"} message={boilerStatus.flameOn ? "Sistema attivo" : "Sistema in standby"} />
+                <StatusBanner status="active" message={boilerStatus.flameOn ? "Sistema attivo" : "Sistema in standby"} />
 
                 {/* Central Dial - Hero Component */}
                 <CentralDial

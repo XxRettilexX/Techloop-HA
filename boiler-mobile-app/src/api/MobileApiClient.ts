@@ -43,7 +43,11 @@ class MobileApiClient {
             if (!response.ok) {
                 throw new Error(`API error: ${response.status}`);
             }
-            return await response.json();
+            const data = await response.json();
+            return {
+                ...data,
+                flameOn: data.flameOn === true || data.flameOn === 'true',
+            } as BoilerStatus;
         } catch (error) {
             console.error('Error fetching boiler status:', error);
             // Return mock data as fallback
@@ -78,7 +82,12 @@ class MobileApiClient {
             if (!response.ok) {
                 throw new Error(`API error: ${response.status}`);
             }
-            return await response.json();
+            const data = await response.json();
+            // Ensure isOpen is boolean (API may return string)
+            return (data as any[]).map(s => ({
+                ...s,
+                isOpen: s.isOpen === true || s.isOpen === 'true',
+            })) as WindowSensor[];
         } catch (error) {
             console.error('Error fetching window sensors:', error);
             return [
@@ -95,7 +104,11 @@ class MobileApiClient {
             if (!response.ok) {
                 throw new Error(`API error: ${response.status}`);
             }
-            return await response.json();
+            const data = await response.json();
+            return (data as any[]).map(s => ({
+                ...s,
+                active: s.active === true || s.active === 'true',
+            })) as Schedule[];
         } catch (error) {
             console.error('Error fetching schedules:', error);
             return [
