@@ -23,7 +23,7 @@ export const COLORS = {
     black: '#000000',
 
     // Semantic colors
-    success: '#06D6A0',
+    success: '#10B981',
     warning: '#F77F00',
     danger: '#EF476F',
     error: '#EF476F',           // Alias for danger

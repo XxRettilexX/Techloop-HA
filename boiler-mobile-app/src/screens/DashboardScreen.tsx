@@ -1,26 +1,21 @@
 import React, { useState } from 'react';
-import { StyleSheet, ScrollView, View } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { Menu, User } from 'lucide-react-native';
 import {
     CentralDial,
     StatusBanner,
     HotWaterCard,
-    QuickModeCard,
-    BoilerStatusCard,
-    WindowSensorBadge,
-    ModeType,
 } from '../components';
-import { COLORS, SPACING } from '../theme';
-import { useBoilerStatus, useRoomStatus, useWindowSensors } from '../contexts/DataContext';
+import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
+import { useBoilerStatus, useRoomStatus } from '../contexts/DataContext';
 
 export const DashboardScreen: React.FC = () => {
     const { boilerStatus } = useBoilerStatus();
     const { roomStatus, setTargetTemp } = useRoomStatus();
-    const { windowSensors } = useWindowSensors();
 
     const [isBoostActive, setIsBoostActive] = useState(false);
-    const [activeMode, setActiveMode] = useState<ModeType | null>(null);
 
     const handleTempChange = async (temp: number) => {
         await setTargetTemp(temp);
@@ -29,67 +24,43 @@ export const DashboardScreen: React.FC = () => {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />
+
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity style={styles.headerButton} activeOpacity={0.7}>
+                    <Menu size={24} color={COLORS.textPrimary} />
+                </TouchableOpacity>
+                <Text style={styles.headerTitle}>Dashboard</Text>
+                <TouchableOpacity style={styles.headerButton} activeOpacity={0.7}>
+                    <User size={24} color={COLORS.textPrimary} />
+                </TouchableOpacity>
+            </View>
+
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.content}
                 showsVerticalScrollIndicator={false}
             >
-                {/* Status Banner */}
-                <StatusBanner status="active" message={boilerStatus.flameOn ? "Sistema attivo" : "Sistema in standby"} />
+                {/* Central Dial in White Card */}
+                <View style={styles.dialCard}>
+                    <CentralDial
+                        currentTemp={roomStatus.currentTemp}
+                        targetTemp={roomStatus.targetTemp}
+                        onTempChange={handleTempChange}
+                    />
+                </View>
 
-                {/* Central Dial - Hero Component */}
-                <CentralDial
-                    currentTemp={roomStatus.currentTemp}
-                    targetTemp={roomStatus.targetTemp}
-                    onTempChange={handleTempChange}
-                />
-
-                {/* Boiler Status */}
-                <BoilerStatusCard
-                    waterTemp={boilerStatus.waterTemp}
-                    pressure={boilerStatus.pressure}
-                    modulation={boilerStatus.modulation}
-                    flameOn={boilerStatus.flameOn}
-                />
-
-                {/* Hot Water */}
+                {/* Hot Water Toggle */}
                 <HotWaterCard
                     isBoostActive={isBoostActive}
                     onToggleBoost={() => setIsBoostActive(!isBoostActive)}
                 />
 
-                {/* Quick Modes */}
-                <View style={styles.modesContainer}>
-                    <QuickModeCard
-                        mode="away"
-                        label="Away Mode"
-                        isActive={activeMode === 'away'}
-                        onPress={() => setActiveMode(activeMode === 'away' ? null : 'away')}
-                    />
-                    <QuickModeCard
-                        mode="vacation"
-                        label="Vacation"
-                        isActive={activeMode === 'vacation'}
-                        onPress={() => setActiveMode(activeMode === 'vacation' ? null : 'vacation')}
-                    />
-                    <QuickModeCard
-                        mode="eco"
-                        label="Eco Mode"
-                        isActive={activeMode === 'eco'}
-                        onPress={() => setActiveMode(activeMode === 'eco' ? null : 'eco')}
-                    />
-                </View>
-
-                {/* Window Sensors */}
-                <View style={styles.sensorsContainer}>
-                    {windowSensors.map((sensor) => (
-                        <WindowSensorBadge
-                            key={sensor.id}
-                            roomName={sensor.name}
-                            isOpen={sensor.isOpen}
-                        />
-                    ))}
-                </View>
+                {/* Status Banner */}
+                <StatusBanner
+                    status="active"
+                    message={boilerStatus.flameOn ? "Il sistema funziona correttamente" : "Sistema in standby"}
+                />
             </ScrollView>
         </SafeAreaView>
     );
@@ -100,6 +71,26 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.background,
     },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: SPACING.md,
+        paddingVertical: SPACING.sm,
+    },
+    headerButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: COLORS.white,
+        alignItems: 'center',
+        justifyContent: 'center',
+        ...SHADOWS.small,
+    },
+    headerTitle: {
+        ...TYPOGRAPHY.h2,
+        color: COLORS.textPrimary,
+    },
     scrollView: {
         flex: 1,
     },
@@ -107,14 +98,10 @@ const styles = StyleSheet.create({
         padding: SPACING.md,
         gap: SPACING.md,
     },
-    modesContainer: {
-        flexDirection: 'row',
-        gap: SPACING.sm,
-        justifyContent: 'space-between',
-    },
-    sensorsContainer: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: SPACING.sm,
+    dialCard: {
+        backgroundColor: COLORS.white,
+        borderRadius: 32,
+        paddingVertical: SPACING.lg,
+        ...SHADOWS.deep,
     },
 });

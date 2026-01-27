@@ -1,7 +1,7 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import { CheckCircle, AlertTriangle, XCircle } from 'lucide-react-native';
-import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS } from '../theme';
+import { COLORS, SPACING, TYPOGRAPHY, BORDER_RADIUS, SHADOWS } from '../theme';
 
 export type StatusType = 'active' | 'warning' | 'error';
 
@@ -14,22 +14,22 @@ const StatusBanner: React.FC<StatusBannerProps> = ({ status, message }) => {
     const getIcon = () => {
         switch (status) {
             case 'active':
-                return <CheckCircle size={20} color={COLORS.primary} strokeWidth={2} />;
+                return <CheckCircle size={20} color={COLORS.white} strokeWidth={2} />;
             case 'warning':
-                return <AlertTriangle size={20} color={COLORS.warning} strokeWidth={2} />;
+                return <AlertTriangle size={20} color={COLORS.white} strokeWidth={2} />;
             case 'error':
-                return <XCircle size={20} color={COLORS.danger} strokeWidth={2} />;
+                return <XCircle size={20} color={COLORS.white} strokeWidth={2} />;
         }
     };
 
     const getBackgroundColor = () => {
         switch (status) {
             case 'active':
-                return COLORS.cardBg;
+                return COLORS.success; // #10B981 green
             case 'warning':
-                return '#FFF4E6'; // Light orange
+                return COLORS.warning;
             case 'error':
-                return '#FFE6E6'; // Light red
+                return COLORS.danger;
         }
     };
 
@@ -45,14 +45,16 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: SPACING.md,
+        paddingHorizontal: SPACING.lg,
         paddingVertical: SPACING.md,
-        borderRadius: BORDER_RADIUS.standard,
+        borderRadius: 20,
         gap: SPACING.sm,
+        ...SHADOWS.small,
     },
     message: {
         ...TYPOGRAPHY.body,
-        color: COLORS.textPrimary,
+        color: COLORS.white,
+        fontWeight: '600',
         flex: 1,
     },
 });

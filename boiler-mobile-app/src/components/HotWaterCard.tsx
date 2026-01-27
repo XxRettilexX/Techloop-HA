@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Switch } from 'react-native';
+import { View, Text, StyleSheet, Switch } from 'react-native';
 import { Droplets } from 'lucide-react-native';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
 
@@ -16,78 +16,48 @@ const HotWaterCard: React.FC<HotWaterCardProps> = ({
 }) => {
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <View style={styles.titleContainer}>
-                    <Droplets
-                        size={24}
-                        color={isBoostActive ? COLORS.primary : COLORS.textSecondary}
-                        strokeWidth={2}
-                    />
-                    <Text style={styles.title}>Hot Water</Text>
-                </View>
-                <Switch
-                    value={isBoostActive}
-                    onValueChange={onToggleBoost}
-                    trackColor={{
-                        false: COLORS.textSecondary,
-                        true: COLORS.primary,
-                    }}
-                    thumbColor={COLORS.white}
+            <View style={styles.leftSection}>
+                <Droplets
+                    size={24}
+                    color={isBoostActive ? COLORS.primary : COLORS.textSecondary}
+                    strokeWidth={2}
                 />
+                <Text style={styles.title}>Hot Water Boost</Text>
             </View>
-
-            <View style={styles.content}>
-                <Text style={styles.label}>Boost Mode</Text>
-                <Text style={styles.status}>
-                    {isBoostActive ? 'Active' : 'Inactive'}
-                </Text>
-                {isBoostActive && (
-                    <Text style={styles.tempText}>{temperature}°C</Text>
-                )}
-            </View>
+            <Switch
+                value={isBoostActive}
+                onValueChange={onToggleBoost}
+                trackColor={{
+                    false: COLORS.border,
+                    true: COLORS.primary,
+                }}
+                thumbColor={COLORS.white}
+                ios_backgroundColor={COLORS.border}
+            />
         </View>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: BORDER_RADIUS.standard,
-        padding: SPACING.md,
-        ...SHADOWS.medium,
-    },
-    header: {
+        backgroundColor: COLORS.white,
+        borderRadius: 20,
+        paddingHorizontal: SPACING.lg,
+        paddingVertical: SPACING.md,
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: SPACING.sm,
+        justifyContent: 'space-between',
+        ...SHADOWS.small,
     },
-    titleContainer: {
+    leftSection: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: SPACING.sm,
     },
     title: {
-        ...TYPOGRAPHY.title,
-        fontSize: 18,
-    },
-    content: {
-        marginTop: SPACING.xs,
-    },
-    label: {
-        ...TYPOGRAPHY.caption,
-        color: COLORS.textSecondary,
-        marginBottom: SPACING.xs,
-    },
-    status: {
         ...TYPOGRAPHY.body,
         fontWeight: '600',
         color: COLORS.textPrimary,
-    },
-    tempText: {
-        ...TYPOGRAPHY.title,
-        color: COLORS.primary,
-        marginTop: SPACING.xs,
     },
 });
 
