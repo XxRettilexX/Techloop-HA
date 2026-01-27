@@ -1,10 +1,10 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation';
-import { DashboardScreen, ScheduleScreen, EnergyScreen, ChatScreen, ProfileScreen } from '../screens';
+import { DashboardScreen, ScheduleScreen, EnergyScreen, ChatScreen } from '../screens';
 import { COLORS, SHADOWS } from '../theme';
-import { Home, Calendar, Zap, MessageCircle, User } from 'lucide-react-native';
-import { StyleSheet } from 'react-native';
+import { Home, Calendar, Zap, MessageCircle } from 'lucide-react-native';
+import { StyleSheet, View } from 'react-native';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -12,7 +12,7 @@ export const TabNavigator: React.FC = () => {
     return (
         <Tab.Navigator
             screenOptions={{
-                tabBarActiveTintColor: COLORS.primary,
+                tabBarActiveTintColor: COLORS.primary, // #6c91c2
                 tabBarInactiveTintColor: COLORS.textSecondary,
                 tabBarStyle: styles.tabBar,
                 tabBarLabelStyle: styles.tabBarLabel,
@@ -49,28 +49,24 @@ export const TabNavigator: React.FC = () => {
                     tabBarIcon: ({ color, size }) => <MessageCircle size={size} color={color} />,
                 }}
             />
-            <Tab.Screen
-                name="Profile"
-                component={ProfileScreen}
-                options={{
-                    tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
-                }}
-            />
         </Tab.Navigator>
     );
 };
 
 const styles = StyleSheet.create({
     tabBar: {
-        backgroundColor: COLORS.surface,
+        backgroundColor: COLORS.white,
         borderTopWidth: 0,
-        height: 60,
-        paddingBottom: 8,
+        height: 70,
+        paddingBottom: 12,
         paddingTop: 8,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        position: 'absolute',
         ...SHADOWS.deep,
     },
     tabBarLabel: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
     },
 });

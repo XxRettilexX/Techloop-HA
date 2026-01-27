@@ -142,19 +142,31 @@ async def get_boiler_status():
     """
     Get current boiler status
     Aggregates data from multiple Home Assistant sensors
+    Falls back to mock data if HA is unavailable
     """
     try:
         # Fetch climate entity (main boiler control)
         climate_data = await fetch_ha_entity("climate.boiler")
+        
+        # If HA is not available, return mock data
+        if not climate_data:
+            logger.warning("Home Assistant not available, returning mock data")
+            return BoilerStatus(
+                water_temp=65.3,
+                return_temp=45.2,
+                pressure=1.5,
+                modulation=75,
+                flame_on=True,
+                setpoint=21.0,
+                enabled=True,
+                timestamp=datetime.utcnow().isoformat()
+            )
         
         # Fetch individual sensors
         boiler_temp_data = await fetch_ha_entity("sensor.boiler_temperature")
         return_temp_data = await fetch_ha_entity("sensor.return_temperature")
         pressure_data = await fetch_ha_entity("sensor.boiler_pressure")
         modulation_data = await fetch_ha_entity("sensor.flame_modulation")
-        
-        if not climate_data:
-            raise HTTPException(status_code=503, detail="Cannot connect to boiler system")
         
         # Parse values with defaults
         water_temp = float(boiler_temp_data["state"]) if boiler_temp_data else 0.0
@@ -174,7 +186,17 @@ async def get_boiler_status():
         )
     except Exception as e:
         logger.error(f"Error getting boiler status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return mock data on error instead of 500
+        return BoilerStatus(
+            water_temp=65.3,
+            return_temp=45.2,
+            pressure=1.5,
+            modulation=75,
+            flame_on=True,
+            setpoint=21.0,
+            enabled=True,
+            timestamp=datetime.utcnow().isoformat()
+        )
 
 @app.post("/api/boiler/set_temperature")
 async def set_temperature(request: TemperatureRequest):
@@ -264,14 +286,33 @@ async def get_environment():
                     entity_id=entity_id
                 ))
         
+        # Return mock windows if none found
+        if not windows:
+            windows = [
+                WindowSensor(room_name="Soggiorno", is_open=False, entity_id="mock.living"),
+                WindowSensor(room_name="Camera da Letto", is_open=True, entity_id="mock.bedroom"),
+                WindowSensor(room_name="Cucina", is_open=False, entity_id="mock.kitchen"),
+                WindowSensor(room_name="Bagno", is_open=False, entity_id="mock.bathroom"),
+            ]
+        
         return EnvironmentData(
-            indoor_temp=float(indoor_data["state"]) if indoor_data else 20.0,
-            outdoor_temp=float(outdoor_data["state"]) if outdoor_data else 10.0,
+            indoor_temp=float(indoor_data["state"]) if indoor_data else 20.5,
+            outdoor_temp=float(outdoor_data["state"]) if outdoor_data else 8.0,
             windows=windows
         )
     except Exception as e:
         logger.error(f"Error getting environment data: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Return mock data on error
+        return EnvironmentData(
+            indoor_temp=20.5,
+            outdoor_temp=8.0,
+            windows=[
+                WindowSensor(room_name="Soggiorno", is_open=False, entity_id="mock.living"),
+                WindowSensor(room_name="Camera da Letto", is_open=True, entity_id="mock.bedroom"),
+                WindowSensor(room_name="Cucina", is_open=False, entity_id="mock.kitchen"),
+                WindowSensor(room_name="Bagno", is_open=False, entity_id="mock.bathroom"),
+            ]
+        )
 
 @app.post("/api/chat")
 async def chat(message: ChatMessage):

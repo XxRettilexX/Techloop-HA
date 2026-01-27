@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -12,8 +12,8 @@ import Svg, { Circle, G } from 'react-native-svg';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
 
 const { width } = Dimensions.get('window');
-const DIAL_SIZE = Math.min(width * 0.7, 300);
-const STROKE_WIDTH = 12;
+const DIAL_SIZE = Math.min(width * 0.65, 280);
+const STROKE_WIDTH = 14;
 const RADIUS = (DIAL_SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
@@ -37,15 +37,34 @@ const CentralDial: React.FC<CentralDialProps> = ({
 }) => {
     // Calculate progress for the arc (0 to 1)
     const progress = (targetTemp - minTemp) / (maxTemp - minTemp);
-    const animatedProgress = useRef(new Animated.Value(progress)).current;
+    const animatedProgress = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
+    // Entrance animation
+    useEffect(() => {
+        Animated.parallel([
+            Animated.spring(scaleAnim, {
+                toValue: 1,
+                damping: 12,
+                stiffness: 80,
+                useNativeDriver: true,
+            }),
+            Animated.timing(animatedProgress, {
+                toValue: progress,
+                duration: 1200,
+                useNativeDriver: false,
+            }),
+        ]).start();
+    }, []);
+
+    // Update animation when target changes
     useEffect(() => {
         const newProgress = (targetTemp - minTemp) / (maxTemp - minTemp);
         Animated.spring(animatedProgress, {
             toValue: newProgress,
             damping: 15,
             stiffness: 100,
-            useNativeDriver: false, // Must be false for SVG animations
+            useNativeDriver: false,
         }).start();
     }, [targetTemp, minTemp, maxTemp]);
 
@@ -68,17 +87,17 @@ const CentralDial: React.FC<CentralDialProps> = ({
     };
 
     return (
-        <View style={styles.container}>
+        <Animated.View style={[styles.container, { transform: [{ scale: scaleAnim }] }]}>
             {/* SVG Circle with Progress Arc */}
             <View style={styles.dialContainer}>
                 <Svg width={DIAL_SIZE} height={DIAL_SIZE}>
                     <G rotation="-90" origin={`${DIAL_SIZE / 2}, ${DIAL_SIZE / 2}`}>
-                        {/* Background Circle */}
+                        {/* Background Circle - Light Gray Track */}
                         <Circle
                             cx={DIAL_SIZE / 2}
                             cy={DIAL_SIZE / 2}
                             r={RADIUS}
-                            stroke={COLORS.cardBg}
+                            stroke="#E5E7EB"
                             strokeWidth={STROKE_WIDTH}
                             fill="none"
                         />
@@ -99,10 +118,7 @@ const CentralDial: React.FC<CentralDialProps> = ({
 
                 {/* Center Content */}
                 <View style={styles.centerContent}>
-                    <Text style={styles.currentTempLabel}>Current</Text>
-                    <Text style={styles.currentTemp}>{currentTemp.toFixed(1)}°</Text>
-                    <View style={styles.divider} />
-                    <Text style={styles.targetTempLabel}>Target</Text>
+                    <Text style={styles.currentTemp}>{Math.round(currentTemp)}°</Text>
                     <Text style={styles.targetTemp}>{targetTemp.toFixed(1)}°</Text>
                 </View>
             </View>
@@ -115,7 +131,7 @@ const CentralDial: React.FC<CentralDialProps> = ({
                     activeOpacity={0.7}
                     disabled={targetTemp <= minTemp}
                 >
-                    <Minus size={32} color={COLORS.white} strokeWidth={2.5} />
+                    <Minus size={28} color={COLORS.white} strokeWidth={2.5} />
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -124,10 +140,10 @@ const CentralDial: React.FC<CentralDialProps> = ({
                     activeOpacity={0.7}
                     disabled={targetTemp >= maxTemp}
                 >
-                    <Plus size={32} color={COLORS.white} strokeWidth={2.5} />
+                    <Plus size={28} color={COLORS.white} strokeWidth={2.5} />
                 </TouchableOpacity>
             </View>
-        </View>
+        </Animated.View>
     );
 };
 
@@ -135,7 +151,7 @@ const styles = StyleSheet.create({
     container: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: SPACING.xl,
+        paddingVertical: SPACING.md,
     },
     dialContainer: {
         width: DIAL_SIZE,
@@ -149,52 +165,31 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    currentTempLabel: {
-        ...TYPOGRAPHY.caption,
-        color: COLORS.textSecondary,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        marginBottom: SPACING.xs,
-    },
     currentTemp: {
-        fontSize: 48,
+        fontSize: 56,
         fontWeight: '700',
         color: COLORS.textPrimary,
         letterSpacing: -2,
     },
-    divider: {
-        width: 60,
-        height: 2,
-        backgroundColor: COLORS.cardBg,
-        marginVertical: SPACING.sm,
-        borderRadius: 1,
-    },
-    targetTempLabel: {
-        ...TYPOGRAPHY.caption,
-        color: COLORS.textSecondary,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-        marginBottom: SPACING.xs,
-    },
     targetTemp: {
-        fontSize: 32,
-        fontWeight: '600',
-        color: COLORS.primary,
-        letterSpacing: -1,
+        fontSize: 22,
+        fontWeight: '500',
+        color: COLORS.textSecondary,
+        marginTop: SPACING.xs,
     },
     controls: {
         flexDirection: 'row',
-        gap: SPACING.lg,
-        marginTop: SPACING.xl,
+        gap: SPACING.xl,
+        marginTop: SPACING.lg,
     },
     button: {
-        width: 64,
-        height: 64,
-        borderRadius: BORDER_RADIUS.standard,
+        width: 56,
+        height: 56,
+        borderRadius: 28,
         backgroundColor: COLORS.primary,
         alignItems: 'center',
         justifyContent: 'center',
-        ...SHADOWS.large,
+        ...SHADOWS.medium,
     },
     buttonDisabled: {
         backgroundColor: COLORS.textSecondary,

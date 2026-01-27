@@ -1,101 +1,68 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import Svg, { Rect, Text as SvgText } from 'react-native-svg';
-import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
+import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
+
+const { width } = Dimensions.get('window');
+const BAR_WIDTH = (width - SPACING.md * 4 - SPACING.lg) / 2;
 
 interface EnergyBarChartProps {
-    currentMonth: number; // kWh
-    previousMonth: number; // kWh
-    currentLabel?: string;
-    previousLabel?: string;
+    currentMonth: number;
+    previousMonth: number;
 }
 
 const EnergyBarChart: React.FC<EnergyBarChartProps> = ({
     currentMonth,
     previousMonth,
-    currentLabel = 'This Month',
-    previousLabel = 'Last Month',
 }) => {
     const maxValue = Math.max(currentMonth, previousMonth);
-    const chartHeight = 200;
-    const barWidth = 60;
-    const gap = 40;
-
-    // Calculate bar heights proportionally
-    const currentHeight = (currentMonth / maxValue) * (chartHeight - 40);
-    const previousHeight = (previousMonth / maxValue) * (chartHeight - 40);
-
-    const difference = currentMonth - previousMonth;
-    const percentChange = previousMonth > 0
-        ? ((difference / previousMonth) * 100).toFixed(1)
-        : '0';
+    const currentHeight = maxValue > 0 ? (currentMonth / maxValue) * 150 : 0;
+    const previousHeight = maxValue > 0 ? (previousMonth / maxValue) * 150 : 0;
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>Energy Consumption</Text>
-                <View style={styles.changeContainer}>
-                    <Text
-                        style={[
-                            styles.changeText,
-                            difference > 0 ? styles.changeNegative : styles.changePositive,
-                        ]}
-                    >
-                        {difference > 0 ? '+' : ''}{percentChange}%
-                    </Text>
-                </View>
-            </View>
+            <Text style={styles.title}>Consumption Comparison</Text>
 
             <View style={styles.chartContainer}>
-                <Svg width={barWidth * 2 + gap + 40} height={chartHeight}>
-                    {/* Previous Month Bar */}
-                    <Rect
-                        x={20}
-                        y={chartHeight - previousHeight - 20}
-                        width={barWidth}
-                        height={previousHeight}
-                        fill={COLORS.textSecondary}
-                        rx={8}
-                    />
-                    <SvgText
-                        x={20 + barWidth / 2}
-                        y={chartHeight - 5}
-                        fontSize="12"
-                        fill={COLORS.textSecondary}
-                        textAnchor="middle"
-                    >
-                        {previousLabel}
-                    </SvgText>
+                {/* This Month Bar */}
+                <View style={styles.barWrapper}>
+                    <View style={styles.barContainer}>
+                        <View
+                            style={[
+                                styles.bar,
+                                styles.currentBar,
+                                { height: currentHeight }
+                            ]}
+                        />
+                    </View>
+                    <Text style={styles.barLabel}>This Month</Text>
+                    <Text style={styles.barValue}>{currentMonth} kWh</Text>
+                </View>
 
-                    {/* Current Month Bar */}
-                    <Rect
-                        x={20 + barWidth + gap}
-                        y={chartHeight - currentHeight - 20}
-                        width={barWidth}
-                        height={currentHeight}
-                        fill={COLORS.primary}
-                        rx={8}
-                    />
-                    <SvgText
-                        x={20 + barWidth + gap + barWidth / 2}
-                        y={chartHeight - 5}
-                        fontSize="12"
-                        fill={COLORS.primary}
-                        textAnchor="middle"
-                    >
-                        {currentLabel}
-                    </SvgText>
-                </Svg>
+                {/* Last Month Bar */}
+                <View style={styles.barWrapper}>
+                    <View style={styles.barContainer}>
+                        <View
+                            style={[
+                                styles.bar,
+                                styles.previousBar,
+                                { height: previousHeight }
+                            ]}
+                        />
+                    </View>
+                    <Text style={styles.barLabel}>Last Month</Text>
+                    <Text style={styles.barValue}>{previousMonth} kWh</Text>
+                </View>
             </View>
 
-            <View style={styles.footer}>
-                <View style={styles.legendItem}>
-                    <View style={[styles.legendDot, { backgroundColor: COLORS.textSecondary }]} />
-                    <Text style={styles.legendText}>{previousMonth} kWh</Text>
-                </View>
+            {/* Legend */}
+            <View style={styles.legend}>
                 <View style={styles.legendItem}>
                     <View style={[styles.legendDot, { backgroundColor: COLORS.primary }]} />
-                    <Text style={styles.legendText}>{currentMonth} kWh</Text>
+                    <Text style={styles.legendText}>This Month</Text>
+                </View>
+                <View style={styles.legendItem}>
+                    <View style={[styles.legendDot, { backgroundColor: '#8b8982' }]} />
+                    <Text style={styles.legendText}>Last Month</Text>
                 </View>
             </View>
         </View>
@@ -104,45 +71,63 @@ const EnergyBarChart: React.FC<EnergyBarChartProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        backgroundColor: COLORS.cardBg,
-        borderRadius: BORDER_RADIUS.standard,
-        padding: SPACING.md,
+        backgroundColor: COLORS.white,
+        borderRadius: 24,
+        padding: SPACING.lg,
         ...SHADOWS.medium,
     },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: SPACING.md,
-    },
     title: {
-        ...TYPOGRAPHY.title,
-        fontSize: 18,
-    },
-    changeContainer: {
-        paddingHorizontal: SPACING.sm,
-        paddingVertical: SPACING.xs,
-        borderRadius: BORDER_RADIUS.small,
-        backgroundColor: COLORS.white,
-    },
-    changeText: {
-        ...TYPOGRAPHY.caption,
+        ...TYPOGRAPHY.subtitle,
+        color: COLORS.textPrimary,
         fontWeight: '600',
-    },
-    changePositive: {
-        color: COLORS.success,
-    },
-    changeNegative: {
-        color: COLORS.danger,
+        marginBottom: SPACING.lg,
     },
     chartContainer: {
-        alignItems: 'center',
-        marginVertical: SPACING.md,
-    },
-    footer: {
         flexDirection: 'row',
         justifyContent: 'space-around',
+        alignItems: 'flex-end',
+        height: 200,
+        paddingBottom: SPACING.md,
+    },
+    barWrapper: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    barContainer: {
+        height: 150,
+        justifyContent: 'flex-end',
+        width: 60,
+    },
+    bar: {
+        width: '100%',
+        borderRadius: 12,
+        minHeight: 20,
+    },
+    currentBar: {
+        backgroundColor: COLORS.primary, // #6c91c2
+    },
+    previousBar: {
+        backgroundColor: '#8b8982', // Taupe/Oliva
+    },
+    barLabel: {
+        ...TYPOGRAPHY.caption,
+        color: COLORS.textSecondary,
         marginTop: SPACING.sm,
+    },
+    barValue: {
+        ...TYPOGRAPHY.body,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginTop: SPACING.xs,
+    },
+    legend: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        gap: SPACING.lg,
+        marginTop: SPACING.md,
+        paddingTop: SPACING.md,
+        borderTopWidth: 1,
+        borderTopColor: '#E5E7EB',
     },
     legendItem: {
         flexDirection: 'row',
@@ -155,8 +140,8 @@ const styles = StyleSheet.create({
         borderRadius: 6,
     },
     legendText: {
-        ...TYPOGRAPHY.body,
-        color: COLORS.textPrimary,
+        ...TYPOGRAPHY.caption,
+        color: COLORS.textSecondary,
     },
 });
 
