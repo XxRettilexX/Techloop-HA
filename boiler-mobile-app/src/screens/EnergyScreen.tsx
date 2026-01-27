@@ -3,7 +3,7 @@ import { StyleSheet, ScrollView, View, Text, TouchableOpacity } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Menu, User, Lightbulb, TrendingDown } from 'lucide-react-native';
-import { EnergyBarChart } from '../components';
+import { EnergyBarChart, ConnectionStatusBar } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 import { useEnergyData } from '../contexts/DataContext';
 
@@ -20,6 +20,7 @@ export const EnergyScreen: React.FC = () => {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />
+            <ConnectionStatusBar />
 
             {/* Header */}
             <View style={styles.header}>

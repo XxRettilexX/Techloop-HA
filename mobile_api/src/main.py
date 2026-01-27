@@ -1,17 +1,19 @@
 """
-Mobile API Service - Unified API for Mobile & Web Apps
-Aggregates data from Home Assistant, Chatbot, and AI services
+Mobile API Service - MQTT-Based Architecture
+Connects directly to MQTT simulators, no Home Assistant dependency
+Uses PocketBase for persistence
 """
 import os
 import logging
 import asyncio
+import threading
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
-from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect, Depends, Header
+from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import httpx
+import paho.mqtt.client as mqtt
 
 from .pocketbase import pb_client
 
@@ -20,19 +22,58 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration from environment
-HA_URL = os.getenv("HA_URL", "http://172.28.0.10:8123")
-HA_TOKEN = os.getenv("HA_TOKEN", "")
+MQTT_BROKER = os.getenv("MQTT_BROKER", "172.28.0.20")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 CHATBOT_URL = os.getenv("CHATBOT_URL", "http://172.28.0.90:8003")
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://172.28.0.70:8002")
+
+# MQTT Topics
+TOPICS = {
+    # Boiler status (from ot_simulator)
+    "boiler_temp": "otgw/status/boiler_temp",
+    "return_temp": "otgw/status/return_temp",
+    "modulation": "otgw/status/modulation",
+    "pressure": "otgw/status/pressure",
+    "flame": "otgw/status/flame",
+    "mode": "otgw/mode/state",
+    "setpoint_state": "otgw/setpoint/state",
+    
+    # Thermal data (from thermal_simulator)
+    "indoor_temp": "home/sensor/indoor_temp",
+    "outdoor_temp": "home/sensor/outdoor_temp",
+    "heating_demand": "home/heating/demand",
+    
+    # Control topics (publish)
+    "setpoint_set": "otgw/setpoint/set",
+    "mode_set": "otgw/mode/set",
+}
+
+# In-memory cache for MQTT data
+mqtt_cache: Dict[str, Any] = {
+    "boiler_temp": 45.0,
+    "return_temp": 35.0,
+    "modulation": 0,
+    "pressure": 1.5,
+    "flame": False,
+    "mode": "heat",
+    "setpoint": 45.0,
+    "indoor_temp": 20.0,
+    "outdoor_temp": 10.0,
+    "heating_demand": 0,
+    "last_update": None,
+}
+
+# MQTT Client
+mqtt_client: Optional[mqtt.Client] = None
+mqtt_connected = False
 
 # FastAPI app
 app = FastAPI(
     title="Boiler Mobile API",
-    version="1.0.0",
-    description="Unified API for boiler control mobile and web apps"
+    version="2.0.0",
+    description="MQTT-based API for boiler control (no Home Assistant)"
 )
 
-# CORS - Allow all origins for development (restrict in production)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -44,7 +85,6 @@ app.add_middleware(
 # ==================== Models ====================
 
 class BoilerStatus(BaseModel):
-    """Boiler current status"""
     water_temp: float
     return_temp: float
     pressure: float
@@ -52,391 +92,301 @@ class BoilerStatus(BaseModel):
     flame_on: bool
     setpoint: float
     enabled: bool
+    indoor_temp: float
+    outdoor_temp: float
     timestamp: str
 
 class TemperatureRequest(BaseModel):
-    """Request to set temperature"""
     temperature: float
 
+class ModeRequest(BaseModel):
+    mode: str  # "heat" or "off"
+
 class ChatMessage(BaseModel):
-    """Chat message from user"""
     message: str
     entity_id: str = "climate.boiler"
 
 class WindowSensor(BaseModel):
-    """Window sensor status"""
     room_name: str
     is_open: bool
     entity_id: str
 
 class EnvironmentData(BaseModel):
-    """Environment sensors data"""
     indoor_temp: float
     outdoor_temp: float
     windows: List[WindowSensor]
 
 class LoginRequest(BaseModel):
-    """User login request"""
     email: str
     password: str
 
-class RegisterRequest(BaseModel):
-    """User registration request"""
-    email: str
-    password: str
-    name: str
+# ==================== MQTT Callbacks ====================
 
-class ScheduleCreate(BaseModel):
-    """Create temperature schedule"""
-    name: str
-    day_of_week: str
-    time: str
-    temperature: float
-    enabled: bool = True
+def on_mqtt_connect(client, userdata, flags, rc):
+    global mqtt_connected
+    if rc == 0:
+        logger.info("✅ Connected to MQTT Broker")
+        mqtt_connected = True
+        
+        # Subscribe to all status topics
+        topics_to_subscribe = [
+            TOPICS["boiler_temp"],
+            TOPICS["return_temp"],
+            TOPICS["modulation"],
+            TOPICS["pressure"],
+            TOPICS["flame"],
+            TOPICS["mode"],
+            TOPICS["setpoint_state"],
+            TOPICS["indoor_temp"],
+            TOPICS["outdoor_temp"],
+            TOPICS["heating_demand"],
+        ]
+        for topic in topics_to_subscribe:
+            client.subscribe(topic)
+            logger.info(f"  Subscribed to: {topic}")
+    else:
+        logger.error(f"❌ MQTT connection failed with code {rc}")
+        mqtt_connected = False
 
-# ==================== Helper Functions ====================
-
-def get_ha_headers() -> Dict[str, str]:
-    """Get Home Assistant API headers"""
-    return {
-        "Authorization": f"Bearer {HA_TOKEN}",
-        "Content-Type": "application/json"
-    }
-
-async def fetch_ha_entity(entity_id: str) -> Optional[Dict]:
-    """Fetch single entity from Home Assistant"""
+def on_mqtt_message(client, userdata, msg):
+    global mqtt_cache
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{HA_URL}/api/states/{entity_id}",
-                headers=get_ha_headers(),
-                timeout=5.0
-            )
-            if response.status_code == 200:
-                return response.json()
-            else:
-                logger.error(f"Failed to fetch {entity_id}: {response.status_code}")
-                return None
+        payload = msg.payload.decode()
+        topic = msg.topic
+        
+        if topic == TOPICS["boiler_temp"]:
+            mqtt_cache["boiler_temp"] = float(payload)
+        elif topic == TOPICS["return_temp"]:
+            mqtt_cache["return_temp"] = float(payload)
+        elif topic == TOPICS["modulation"]:
+            mqtt_cache["modulation"] = int(float(payload))
+        elif topic == TOPICS["pressure"]:
+            mqtt_cache["pressure"] = float(payload)
+        elif topic == TOPICS["flame"]:
+            mqtt_cache["flame"] = payload.upper() == "ON"
+        elif topic == TOPICS["mode"]:
+            mqtt_cache["mode"] = payload
+        elif topic == TOPICS["setpoint_state"]:
+            mqtt_cache["setpoint"] = float(payload)
+        elif topic == TOPICS["indoor_temp"]:
+            mqtt_cache["indoor_temp"] = float(payload)
+        elif topic == TOPICS["outdoor_temp"]:
+            mqtt_cache["outdoor_temp"] = float(payload)
+        elif topic == TOPICS["heating_demand"]:
+            mqtt_cache["heating_demand"] = float(payload)
+        
+        mqtt_cache["last_update"] = datetime.utcnow().isoformat()
+        
     except Exception as e:
-        logger.error(f"Error fetching {entity_id}: {e}")
-        return None
+        logger.error(f"Error processing MQTT message: {e}")
+
+def on_mqtt_disconnect(client, userdata, rc):
+    global mqtt_connected
+    mqtt_connected = False
+    logger.warning(f"⚠️ Disconnected from MQTT (rc={rc})")
+
+def start_mqtt_client():
+    global mqtt_client
+    try:
+        mqtt_client = mqtt.Client("mobile_api")
+        mqtt_client.on_connect = on_mqtt_connect
+        mqtt_client.on_message = on_mqtt_message
+        mqtt_client.on_disconnect = on_mqtt_disconnect
+        
+        logger.info(f"🔌 Connecting to MQTT broker at {MQTT_BROKER}:{MQTT_PORT}...")
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_start()
+    except Exception as e:
+        logger.error(f"❌ Failed to start MQTT client: {e}")
 
 # ==================== Endpoints ====================
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
     return {
         "service": "Boiler Mobile API",
-        "version": "1.0.0",
+        "version": "2.0.0",
+        "architecture": "MQTT-direct",
+        "mqtt_connected": mqtt_connected,
         "status": "running"
     }
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
-    return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+    return {
+        "status": "healthy",
+        "mqtt_connected": mqtt_connected,
+        "timestamp": datetime.utcnow().isoformat()
+    }
 
 @app.get("/api/boiler/status", response_model=BoilerStatus)
 async def get_boiler_status():
-    """
-    Get current boiler status
-    Aggregates data from multiple Home Assistant sensors
-    Falls back to mock data if HA is unavailable
-    """
-    try:
-        # Fetch climate entity (main boiler control)
-        climate_data = await fetch_ha_entity("climate.boiler")
-        
-        # If HA is not available, return mock data
-        if not climate_data:
-            logger.warning("Home Assistant not available, returning mock data")
-            return BoilerStatus(
-                water_temp=65.3,
-                return_temp=45.2,
-                pressure=1.5,
-                modulation=75,
-                flame_on=True,
-                setpoint=21.0,
-                enabled=True,
-                timestamp=datetime.utcnow().isoformat()
-            )
-        
-        # Fetch individual sensors
-        boiler_temp_data = await fetch_ha_entity("sensor.boiler_temperature")
-        return_temp_data = await fetch_ha_entity("sensor.return_temperature")
-        pressure_data = await fetch_ha_entity("sensor.boiler_pressure")
-        modulation_data = await fetch_ha_entity("sensor.flame_modulation")
-        
-        # Parse values with defaults
-        water_temp = float(boiler_temp_data["state"]) if boiler_temp_data else 0.0
-        return_temp = float(return_temp_data["state"]) if return_temp_data else 0.0
-        pressure = float(pressure_data["state"]) if pressure_data else 0.0
-        modulation = int(modulation_data["state"]) if modulation_data else 0
-        
-        return BoilerStatus(
-            water_temp=water_temp,
-            return_temp=return_temp,
-            pressure=pressure,
-            modulation=modulation,
-            flame_on=modulation > 0,
-            setpoint=float(climate_data.get("attributes", {}).get("temperature", 0)),
-            enabled=climate_data.get("state") != "off",
-            timestamp=datetime.utcnow().isoformat()
-        )
-    except Exception as e:
-        logger.error(f"Error getting boiler status: {e}")
-        # Return mock data on error instead of 500
-        return BoilerStatus(
-            water_temp=65.3,
-            return_temp=45.2,
-            pressure=1.5,
-            modulation=75,
-            flame_on=True,
-            setpoint=21.0,
-            enabled=True,
-            timestamp=datetime.utcnow().isoformat()
-        )
+    """Get current boiler status from MQTT cache"""
+    return BoilerStatus(
+        water_temp=mqtt_cache["boiler_temp"],
+        return_temp=mqtt_cache["return_temp"],
+        pressure=mqtt_cache["pressure"],
+        modulation=mqtt_cache["modulation"],
+        flame_on=mqtt_cache["flame"],
+        setpoint=mqtt_cache["setpoint"],
+        enabled=mqtt_cache["mode"] != "off",
+        indoor_temp=mqtt_cache["indoor_temp"],
+        outdoor_temp=mqtt_cache["outdoor_temp"],
+        timestamp=mqtt_cache["last_update"] or datetime.utcnow().isoformat()
+    )
 
 @app.post("/api/boiler/set_temperature")
 async def set_temperature(request: TemperatureRequest):
-    """Set boiler target temperature"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{HA_URL}/api/services/climate/set_temperature",
-                headers=get_ha_headers(),
-                json={
-                    "entity_id": "climate.boiler",
-                    "temperature": request.temperature
-                },
-                timeout=10.0
-            )
-            
-            if response.status_code == 200:
-                return {
-                    "success": True,
-                    "temperature": request.temperature,
-                    "message": f"Temperature set to {request.temperature}°C"
-                }
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail="Failed to set temperature"
-                )
-    except Exception as e:
-        logger.error(f"Error setting temperature: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    """Set boiler water temperature setpoint via MQTT"""
+    if not mqtt_connected or not mqtt_client:
+        raise HTTPException(status_code=503, detail="MQTT not connected")
+    
+    # Clamp to valid range (30-80°C for water temp)
+    temp = max(30.0, min(80.0, request.temperature))
+    
+    mqtt_client.publish(TOPICS["setpoint_set"], str(temp))
+    logger.info(f"🌡️ Set temperature to {temp}°C")
+    
+    return {
+        "success": True,
+        "temperature": temp,
+        "message": f"Temperature set to {temp}°C"
+    }
+
+@app.post("/api/boiler/set_room_temperature")
+async def set_room_temperature(request: TemperatureRequest):
+    """Set target room temperature (converts to water temp via climate curve)"""
+    if not mqtt_connected or not mqtt_client:
+        raise HTTPException(status_code=503, detail="MQTT not connected")
+    
+    # Clamp room temp to valid range
+    room_temp = max(15.0, min(25.0, request.temperature))
+    
+    # Simple climate curve: water_temp = 35 + 1.5 * (target - outdoor)
+    outdoor = mqtt_cache["outdoor_temp"]
+    water_temp = 35.0 + 1.5 * (room_temp - outdoor)
+    water_temp = max(30.0, min(80.0, water_temp))
+    
+    mqtt_client.publish(TOPICS["setpoint_set"], str(water_temp))
+    logger.info(f"🏠 Room temp {room_temp}°C → Water temp {water_temp:.1f}°C")
+    
+    return {
+        "success": True,
+        "room_temperature": room_temp,
+        "water_temperature": round(water_temp, 1),
+        "message": f"Target room temperature set to {room_temp}°C"
+    }
 
 @app.post("/api/boiler/turn_on")
 async def turn_on_boiler():
     """Turn on the boiler"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{HA_URL}/api/services/climate/turn_on",
-                headers=get_ha_headers(),
-                json={"entity_id": "climate.boiler"},
-                timeout=10.0
-            )
-            return {"success": response.status_code == 200}
-    except Exception as e:
-        logger.error(f"Error turning on boiler: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    if not mqtt_connected or not mqtt_client:
+        raise HTTPException(status_code=503, detail="MQTT not connected")
+    
+    mqtt_client.publish(TOPICS["mode_set"], "heat")
+    logger.info("🔥 Boiler turned ON")
+    return {"success": True, "mode": "heat"}
 
 @app.post("/api/boiler/turn_off")
 async def turn_off_boiler():
     """Turn off the boiler"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                f"{HA_URL}/api/services/climate/turn_off",
-                headers=get_ha_headers(),
-                json={"entity_id": "climate.boiler"},
-                timeout=10.0
-            )
-            return {"success": response.status_code == 200}
-    except Exception as e:
-        logger.error(f"Error turning off boiler: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    if not mqtt_connected or not mqtt_client:
+        raise HTTPException(status_code=503, detail="MQTT not connected")
+    
+    mqtt_client.publish(TOPICS["mode_set"], "off")
+    logger.info("⚫ Boiler turned OFF")
+    return {"success": True, "mode": "off"}
 
 @app.get("/api/environment", response_model=EnvironmentData)
 async def get_environment():
-    """Get environment data (temperatures and window sensors)"""
-    try:
-        # Fetch temperature sensors
-        indoor_data = await fetch_ha_entity("sensor.indoor_temperature")
-        outdoor_data = await fetch_ha_entity("sensor.outdoor_temperature")
-        
-        # Fetch window sensors
-        window_entities = [
-            ("binary_sensor.window_living_room", "Soggiorno"),
-            ("binary_sensor.window_bedroom", "Camera da Letto"),
-            ("binary_sensor.window_kitchen", "Cucina"),
-            ("binary_sensor.window_bathroom", "Bagno"),
-        ]
-        
-        windows = []
-        for entity_id, room_name in window_entities:
-            data = await fetch_ha_entity(entity_id)
-            if data:
-                windows.append(WindowSensor(
-                    room_name=room_name,
-                    is_open=data.get("state") == "on",
-                    entity_id=entity_id
-                ))
-        
-        # Return mock windows if none found
-        if not windows:
-            windows = [
-                WindowSensor(room_name="Soggiorno", is_open=False, entity_id="mock.living"),
-                WindowSensor(room_name="Camera da Letto", is_open=True, entity_id="mock.bedroom"),
-                WindowSensor(room_name="Cucina", is_open=False, entity_id="mock.kitchen"),
-                WindowSensor(room_name="Bagno", is_open=False, entity_id="mock.bathroom"),
-            ]
-        
-        return EnvironmentData(
-            indoor_temp=float(indoor_data["state"]) if indoor_data else 20.5,
-            outdoor_temp=float(outdoor_data["state"]) if outdoor_data else 8.0,
-            windows=windows
-        )
-    except Exception as e:
-        logger.error(f"Error getting environment data: {e}")
-        # Return mock data on error
-        return EnvironmentData(
-            indoor_temp=20.5,
-            outdoor_temp=8.0,
-            windows=[
-                WindowSensor(room_name="Soggiorno", is_open=False, entity_id="mock.living"),
-                WindowSensor(room_name="Camera da Letto", is_open=True, entity_id="mock.bedroom"),
-                WindowSensor(room_name="Cucina", is_open=False, entity_id="mock.kitchen"),
-                WindowSensor(room_name="Bagno", is_open=False, entity_id="mock.bathroom"),
-            ]
-        )
+    """Get environment data (temperatures and windows)"""
+    # Windows are simulated - in production would come from MQTT
+    windows = [
+        WindowSensor(room_name="Soggiorno", is_open=False, entity_id="window.living"),
+        WindowSensor(room_name="Camera da Letto", is_open=False, entity_id="window.bedroom"),
+        WindowSensor(room_name="Cucina", is_open=False, entity_id="window.kitchen"),
+        WindowSensor(room_name="Bagno", is_open=False, entity_id="window.bathroom"),
+    ]
+    
+    return EnvironmentData(
+        indoor_temp=mqtt_cache["indoor_temp"],
+        outdoor_temp=mqtt_cache["outdoor_temp"],
+        windows=windows
+    )
 
 @app.post("/api/chat")
 async def chat(message: ChatMessage):
     """Send message to chatbot"""
+    import httpx
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 f"{CHATBOT_URL}/chat",
-                json={
-                    "message": message.message,
-                    "entity_id": message.entity_id
-                },
+                json={"message": message.message, "entity_id": message.entity_id},
                 timeout=30.0
             )
-            
             if response.status_code == 200:
                 return response.json()
             else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail="Chatbot service error"
-                )
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=504, detail="Chatbot timeout")
+                raise HTTPException(status_code=response.status_code, detail="Chatbot error")
     except Exception as e:
-        logger.error(f"Error calling chatbot: {e}")
+        logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/maintenance/report")
-async def get_maintenance_report(hours: int = 168):
-    """Get AI maintenance report"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{AI_SERVICE_URL}/maintenance/report",
-                params={
-                    "entity_ids": "sensor.boiler_pressure,sensor.boiler_temperature,climate.boiler",
-                    "hours": hours
-                },
-                timeout=30.0
-            )
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail="AI service error"
-                )
-    except Exception as e:
-        logger.error(f"Error getting maintenance report: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==================== Authentication & Database Endpoints ====================
+# ==================== PocketBase Endpoints ====================
 
 @app.post("/api/auth/login")
 async def login(request: LoginRequest):
     """User login with PocketBase"""
     try:
         result = await pb_client.auth_with_password(request.email, request.password)
-        return {
-            "success": True,
-            "token": result["token"],
-            "user": result["record"]
-        }
+        return {"success": True, "token": result["token"], "user": result["record"]}
     except Exception as e:
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-@app.get("/api/user/settings")
-async def get_settings(authorization: str = Header(...)):
-    """Get user boiler settings"""
-    try:
-        # Extract user_id from token (simplified - in production parse JWT properly)
-        # For now, expect client to pass user_id in query or extract from token
-        user_id = "USER_ID"  # TODO: Extract from JWT token
-        
-        settings = await pb_client.get_user_settings(user_id, authorization)
-        if not settings:
-            raise HTTPException(status_code=404, detail="Settings not found")
-        return settings
-    except Exception as e:
-        logger.error(f"Error getting settings: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/schedules")
-async def get_schedules(authorization: str = Header(...), day: Optional[str] = None):
-    """Get user's temperature schedules"""
+async def get_schedules(day: Optional[str] = None):
+    """Get temperature schedules from PocketBase"""
     try:
-        user_id = "USER_ID"  # TODO: Extract from JWT
-        schedules = await pb_client.get_schedules(user_id, authorization, day)
-        return {"schedules": schedules}
+        # Demo mode: return mock schedules
+        return {
+            "schedules": [
+                {"id": "1", "time": "06:00", "temperature": 22, "enabled": True},
+                {"id": "2", "time": "09:00", "temperature": 19, "enabled": True},
+                {"id": "3", "time": "17:00", "temperature": 21, "enabled": True},
+                {"id": "4", "time": "22:00", "temperature": 18, "enabled": True},
+            ]
+        }
     except Exception as e:
-        logger.error(f"Error getting schedules: {e}")
+        logger.error(f"Schedules error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/history")
 async def get_history(hours: int = 24):
-    """Get boiler historical data"""
+    """Get historical data from PocketBase"""
     try:
         history = await pb_client.get_history(hours)
         return {"history": history, "count": len(history)}
     except Exception as e:
-        logger.error(f"Error getting history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"History error: {e}")
+        return {"history": [], "count": 0}
 
-# ==================== WebSocket for Real-time Updates ====================
+# ==================== WebSocket ====================
 
 @app.websocket("/ws/boiler")
 async def websocket_boiler(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time boiler status updates
-    Sends status every 2 seconds
-    """
+    """WebSocket for real-time boiler updates"""
     await websocket.accept()
-    logger.info("WebSocket client connected")
+    logger.info("📡 WebSocket client connected")
     
     try:
         while True:
+            status = await get_boiler_status()
+            await websocket.send_json(status.model_dump())
+            
+            # Save to history periodically
             try:
-                # Get current status
-                status = await get_boiler_status()
-                
-                # Save to history database (every update)
                 await pb_client.save_history({
                     "water_temp": status.water_temp,
                     "return_temp": status.return_temp,
@@ -444,36 +394,36 @@ async def websocket_boiler(websocket: WebSocket):
                     "modulation": status.modulation,
                     "flame_on": status.flame_on,
                     "setpoint": status.setpoint,
+                    "indoor_temp": status.indoor_temp,
+                    "outdoor_temp": status.outdoor_temp,
                 })
-                
-                # Send to client
-                await websocket.send_json(status.dict())
-                # Wait 2 seconds before next update
-                await asyncio.sleep(2)
             except Exception as e:
-                logger.error(f"Error in WebSocket loop: {e}")
-                break
+                logger.debug(f"History save skipped: {e}")
+            
+            await asyncio.sleep(2)
     except WebSocketDisconnect:
-        logger.info("WebSocket client disconnected")
+        logger.info("📡 WebSocket client disconnected")
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
-    finally:
-        try:
-            await websocket.close()
-        except:
-            pass
 
-# ==================== Startup ====================
+# ==================== Startup/Shutdown ====================
 
 @app.on_event("startup")
 async def startup_event():
-    """Log startup information"""
-    logger.info("🚀 Mobile API Service starting...")
-    logger.info(f"   Home Assistant: {HA_URL}")
+    logger.info("🚀 Mobile API v2.0 starting...")
+    logger.info(f"   MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}")
     logger.info(f"   Chatbot: {CHATBOT_URL}")
-    logger.info(f"   AI Service: {AI_SERVICE_URL}")
-    logger.info(f"   PocketBase: {os.getenv('POCKETBASE_URL', 'http://172.28.0.110:8090')}")
-    logger.info("✅ Mobile API Service ready!")
+    start_mqtt_client()
+    # Wait for MQTT connection
+    await asyncio.sleep(2)
+    logger.info("✅ Mobile API ready!")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    if mqtt_client:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
+    logger.info("👋 Mobile API stopped")
 
 if __name__ == "__main__":
     import uvicorn

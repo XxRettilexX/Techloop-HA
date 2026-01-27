@@ -9,6 +9,7 @@ export { default as EnergyTipsCard } from './EnergyTipsCard';
 export { default as BoilerStatusCard } from './BoilerStatusCard';
 export { default as WindowSensorBadge } from './WindowSensorBadge';
 export { default as ChatBubble } from './ChatBubble';
+export { ConnectionStatusBar } from './ConnectionStatusBar';
 
 // Export types
 export type { StatusType } from './StatusBanner';

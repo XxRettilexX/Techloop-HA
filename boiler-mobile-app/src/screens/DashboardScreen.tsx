@@ -7,13 +7,15 @@ import {
     CentralDial,
     StatusBanner,
     HotWaterCard,
+    ConnectionStatusBar,
 } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
-import { useBoilerStatus, useRoomStatus } from '../contexts/DataContext';
+import { useBoilerStatus, useRoomStatus, useConnectionStatus } from '../contexts/DataContext';
 
 export const DashboardScreen: React.FC = () => {
     const { boilerStatus } = useBoilerStatus();
     const { roomStatus, setTargetTemp } = useRoomStatus();
+    const { connectionStatus } = useConnectionStatus();
 
     const [isBoostActive, setIsBoostActive] = useState(false);
 
@@ -24,6 +26,9 @@ export const DashboardScreen: React.FC = () => {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />
+
+            {/* Connection Status Banner */}
+            <ConnectionStatusBar />
 
             {/* Header */}
             <View style={styles.header}>

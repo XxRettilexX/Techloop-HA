@@ -3,6 +3,7 @@ import { StyleSheet, ScrollView, View, Text, TouchableOpacity, Switch } from 're
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { Menu, User, Home, Moon, Leaf, MapPin } from 'lucide-react-native';
+import { ConnectionStatusBar } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 import { useSchedules } from '../contexts/DataContext';
 
@@ -30,6 +31,7 @@ export const ScheduleScreen: React.FC = () => {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar style="dark" />
+            <ConnectionStatusBar />
 
             {/* Header */}
             <View style={styles.header}>
