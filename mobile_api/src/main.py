@@ -460,7 +460,7 @@ async def chat_stream(message: str, entity_id: str = "climate.boiler"):
                 async with client.stream(
                     "POST",
                     f"{CHATBOT_URL}/chat/stream",
-                    json={"message": message.message, "context": context},
+                    json={"message": message, "context": context},
                     timeout=60.0
                 ) as response:
                     async for line in response.aiter_lines():
