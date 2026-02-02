@@ -24,10 +24,13 @@ export const API_CONFIG = {
     // Main API endpoint for mobile app
     mobileApi: `http://${SERVER_HOST}:${PORTS.mobileApi}/api`,
 
+    // Streaming chat endpoint (SSE)
+    chatStream: `http://${SERVER_HOST}:${PORTS.mobileApi}/api/chat/stream`,
+
     // Direct chatbot access (also available via mobile_api)
     chatbot: `http://${SERVER_HOST}:${PORTS.chatbot}`,
 
-    // PocketBase for authentication (if needed directly)
+    // PocketBase for authentication and realtime subscriptions
     pocketbase: `http://${SERVER_HOST}:${PORTS.pocketbase}`,
 
     // AI Boiler service (for direct access)
@@ -42,6 +45,10 @@ export const API_CONFIG = {
 
     // WebSocket for real-time boiler status
     wsBoiler: `ws://${SERVER_HOST}:${PORTS.mobileApi}/ws/boiler`,
+
+    // Cache management endpoints
+    cacheStats: `http://${SERVER_HOST}:${PORTS.chatbot}/cache/stats`,
+    cacheClear: `http://${SERVER_HOST}:${PORTS.chatbot}/cache/clear`,
 } as const;
 
 export const MQTT_TOPICS = {

@@ -11,6 +11,13 @@ export interface BoilerStatus {
     indoor_temp: number;
     outdoor_temp: number;
     timestamp: string;
+    // Extended physics metrics (optional for backward compatibility)
+    humidity?: number;
+    perceived_temp?: number;
+    boiler_efficiency?: number;
+    runtime_hours?: number;
+    solar_gain?: number;
+    error_code?: string | null;
 }
 
 export interface ChatResponse {

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     StyleSheet,
     View,
@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Send, Paperclip, Bot } from 'lucide-react-native';
-import { chatService, type ChatMessage } from '../services/ChatService';
+import { Send, Paperclip, Bot, StopCircle } from 'lucide-react-native';
+import { chatService, type ChatMessage, type StreamChunk } from '../services/ChatService';
 import { voiceService } from '../services/VoiceService';
 import { Header, ChatBubble } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
@@ -36,12 +36,61 @@ export const ChatScreen: React.FC = () => {
     ]);
     const [inputText, setInputText] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isStreaming, setIsStreaming] = useState(false);
     const [isTTSEnabled, setIsTTSEnabled] = useState(true);
     const flatListRef = useRef<FlatList>(null);
+    const streamingMessageId = useRef<string | null>(null);
 
     useEffect(() => {
         if (isTTSEnabled) {
             voiceService.speak(messages[0].text);
+        }
+    }, []);
+
+    // Handle streaming chunk updates
+    const handleStreamChunk = useCallback((chunk: StreamChunk, fullText: string) => {
+        if (chunk.type === 'content') {
+            // Update the streaming message in real-time
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === streamingMessageId.current
+                        ? { ...msg, text: fullText }
+                        : msg
+                )
+            );
+        } else if (chunk.type === 'done') {
+            // Finalize the message
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === streamingMessageId.current
+                        ? {
+                            ...msg,
+                            text: fullText,
+                            isStreaming: false,
+                            validated: chunk.validated,
+                            actionTaken: chunk.action_taken,
+                        }
+                        : msg
+                )
+            );
+            streamingMessageId.current = null;
+        }
+    }, []);
+
+    // Cancel ongoing stream
+    const handleCancelStream = useCallback(() => {
+        chatService.cancelStream();
+        setIsStreaming(false);
+        setIsLoading(false);
+        if (streamingMessageId.current) {
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === streamingMessageId.current
+                        ? { ...msg, isStreaming: false, text: msg.text + ' [interrotto]' }
+                        : msg
+                )
+            );
+            streamingMessageId.current = null;
         }
     }, []);
 
@@ -55,25 +104,31 @@ export const ChatScreen: React.FC = () => {
             timestamp: new Date(),
         };
 
-        setMessages((prev) => [...prev, userMessage]);
+        // Create placeholder for streaming bot response
+        const botMessageId = (Date.now() + 1).toString();
+        const botMessage: ChatMessage = {
+            id: botMessageId,
+            text: '',
+            sender: 'bot',
+            timestamp: new Date(),
+            isStreaming: true,
+        };
+
+        streamingMessageId.current = botMessageId;
+        setMessages((prev) => [...prev, userMessage, botMessage]);
         setInputText('');
         setIsLoading(true);
+        setIsStreaming(true);
 
         try {
-            const response = await chatService.sendMessage(text.trim());
+            // Use streaming API
+            const response = await chatService.sendMessageStreaming(
+                text.trim(),
+                handleStreamChunk
+            );
 
-            const botMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                text: response.response,
-                sender: 'bot',
-                timestamp: new Date(),
-                validated: response.validated,
-                actionTaken: response.action_taken,
-            };
-
-            setMessages((prev) => [...prev, botMessage]);
-
-            if (isTTSEnabled) {
+            // Enable TTS after streaming completes
+            if (isTTSEnabled && response.response) {
                 voiceService.speak(response.response);
             }
 
@@ -90,15 +145,20 @@ export const ChatScreen: React.FC = () => {
                 errorText = 'Il server è occupato nell\'elaborazione, riprovare tra un istante';
             }
 
-            const errorMessage: ChatMessage = {
-                id: (Date.now() + 1).toString(),
-                text: errorText,
-                sender: 'bot',
-                timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
+            // Update the streaming message with error
+            if (streamingMessageId.current) {
+                setMessages((prev) =>
+                    prev.map((msg) =>
+                        msg.id === streamingMessageId.current
+                            ? { ...msg, text: errorText, isStreaming: false }
+                            : msg
+                    )
+                );
+                streamingMessageId.current = null;
+            }
         } finally {
             setIsLoading(false);
+            setIsStreaming(false);
         }
     };
 
@@ -172,8 +232,21 @@ export const ChatScreen: React.FC = () => {
             {/* Loading indicator */}
             {isLoading && (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="small" color={COLORS.primary} />
-                    <Text style={styles.loadingText}>L'IA sta pensando...</Text>
+                    {isStreaming ? (
+                        <TouchableOpacity
+                            style={styles.stopButton}
+                            onPress={handleCancelStream}
+                            activeOpacity={0.7}
+                        >
+                            <StopCircle size={20} color={COLORS.danger} />
+                            <Text style={styles.stopButtonText}>Interrompi</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <>
+                            <ActivityIndicator size="small" color={COLORS.primary} />
+                            <Text style={styles.loadingText}>L'IA sta pensando...</Text>
+                        </>
+                    )}
                 </View>
             )}
 
@@ -301,6 +374,22 @@ const styles = StyleSheet.create({
     loadingText: {
         ...TYPOGRAPHY.caption,
         color: COLORS.textSecondary,
+    },
+    stopButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.white,
+        paddingHorizontal: SPACING.md,
+        paddingVertical: SPACING.sm,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: COLORS.danger,
+        gap: SPACING.xs,
+    },
+    stopButtonText: {
+        ...TYPOGRAPHY.caption,
+        color: COLORS.danger,
+        fontWeight: '600',
     },
     quickActionsContainer: {
         flexDirection: 'row',

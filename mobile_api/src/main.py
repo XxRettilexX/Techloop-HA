@@ -438,17 +438,11 @@ async def chat_fast(message: ChatMessage):
         logger.error(f"Fast chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/chat/stream")
-async def chat_stream(message: ChatMessage):
+@app.get("/api/chat/stream")
+async def chat_stream(message: str, entity_id: str = "climate.boiler"):
     """
     SSE streaming chat endpoint for real-time responses.
     Returns Server-Sent Events as the LLM generates tokens.
-    
-    Use EventSource in the client:
-    ```javascript
-    const es = new EventSource('/api/chat/stream', {method: 'POST', body: ...});
-    es.onmessage = (e) => { const data = JSON.parse(e.data); ... };
-    ```
     """
     context = {
         "boiler_temp": mqtt_cache.get("boiler_temp"),

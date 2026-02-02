@@ -1,4 +1,11 @@
 import { registerRootComponent } from 'expo';
+import EventSource from 'react-native-sse';
+
+// Polyfill EventSource for React Native
+if (!global.EventSource) {
+    // @ts-ignore
+    global.EventSource = EventSource;
+}
 
 import App from './App';
 
