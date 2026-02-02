@@ -336,7 +336,7 @@ All validation attempts and maintenance analyses are logged with timestamps.
   
 - If not present, pull it:
   ```bash
-  docker exec -it ollama_llm ollama pull llama3.2
+  docker exec -it ollama_llm ollama pull llama3.2:1b
   ```
 
 ### No Historical Data

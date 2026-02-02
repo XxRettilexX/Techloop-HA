@@ -32,8 +32,8 @@ const CentralDial: React.FC<CentralDialProps> = ({
     currentTemp,
     targetTemp,
     onTempChange,
-    minTemp = 5,
-    maxTemp = 30,
+    minTemp = 7,
+    maxTemp = 27,
 }) => {
     // Calculate progress for the arc (0 to 1)
     const progress = (targetTemp - minTemp) / (maxTemp - minTemp);

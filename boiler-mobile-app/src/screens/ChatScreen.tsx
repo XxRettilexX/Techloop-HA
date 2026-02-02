@@ -16,6 +16,7 @@ import { StatusBar } from 'expo-status-bar';
 import { Send, Paperclip, Bot } from 'lucide-react-native';
 import { chatService, type ChatMessage } from '../services/ChatService';
 import { voiceService } from '../services/VoiceService';
+import { Header, ChatBubble } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 
 const quickActions = [
@@ -79,11 +80,19 @@ export const ChatScreen: React.FC = () => {
             setTimeout(() => {
                 flatListRef.current?.scrollToEnd({ animated: true });
             }, 100);
-        } catch (error) {
+        } catch (error: any) {
             console.error('Chat error:', error);
+
+            let errorText = '❌ Errore di connessione. Riprova più tardi.';
+
+            // Check for timeout or specific server busy conditions
+            if (error.name === 'AbortError' || error.message?.includes('timeout') || error.message?.includes('503')) {
+                errorText = 'Il server è occupato nell\'elaborazione, riprovare tra un istante';
+            }
+
             const errorMessage: ChatMessage = {
                 id: (Date.now() + 1).toString(),
-                text: '❌ Errore di connessione. Riprova più tardi.',
+                text: errorText,
                 sender: 'bot',
                 timestamp: new Date(),
             };
@@ -147,29 +156,7 @@ export const ChatScreen: React.FC = () => {
             <StatusBar style="dark" />
 
             {/* Header */}
-            <View style={styles.header}>
-                <View style={styles.headerLeft}>
-                    <View style={styles.botIconContainer}>
-                        <Bot size={24} color={COLORS.white} />
-                    </View>
-                    <View>
-                        <Text style={styles.headerTitle}>AI Support</Text>
-                        <View style={styles.onlineStatus}>
-                            <View style={styles.onlineDot} />
-                            <Text style={styles.onlineText}>Online</Text>
-                        </View>
-                    </View>
-                </View>
-                <TouchableOpacity
-                    style={styles.ttsButton}
-                    onPress={() => {
-                        setIsTTSEnabled(!isTTSEnabled);
-                        voiceService.updateSettings({ ttsEnabled: !isTTSEnabled });
-                    }}
-                >
-                    <Text style={styles.ttsButtonText}>{isTTSEnabled ? '🔊' : '🔇'}</Text>
-                </TouchableOpacity>
-            </View>
+            <Header title="Assistant" />
 
             {/* Messages */}
             <FlatList
@@ -186,7 +173,7 @@ export const ChatScreen: React.FC = () => {
             {isLoading && (
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="small" color={COLORS.primary} />
-                    <Text style={styles.loadingText}>Elaborazione...</Text>
+                    <Text style={styles.loadingText}>L'IA sta pensando...</Text>
                 </View>
             )}
 
@@ -245,47 +232,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.background,
     },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: SPACING.md,
-        backgroundColor: COLORS.white,
-        ...SHADOWS.small,
-    },
-    headerLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: SPACING.sm,
-    },
-    botIconContainer: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: COLORS.primary,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    headerTitle: {
-        ...TYPOGRAPHY.subtitle,
-        color: COLORS.textPrimary,
-        fontWeight: '600',
-    },
-    onlineStatus: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-    },
-    onlineDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: COLORS.success,
-    },
-    onlineText: {
-        ...TYPOGRAPHY.caption,
-        color: COLORS.success,
-    },
+    // Header styles removed as we use shared Header component
     ttsButton: {
         padding: SPACING.sm,
     },

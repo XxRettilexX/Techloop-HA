@@ -1,6 +1,7 @@
 import React from 'react';
-import { StyleSheet, ScrollView, View, Text, TouchableOpacity } from 'react-native';
+import { StyleSheet, ScrollView, View, Text, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,11 +11,29 @@ import { User, Settings, Bell, Shield, Info, LogOut } from 'lucide-react-native'
 export const ProfileScreen: React.FC = () => {
     const { user, logout } = useAuth();
 
+    const navigation = useNavigation();
+
     const menuItems = [
-        { icon: Settings, label: 'Settings', onPress: () => { } },
-        { icon: Bell, label: 'Notifications', onPress: () => { } },
-        { icon: Shield, label: 'Privacy & Security', onPress: () => { } },
-        { icon: Info, label: 'About', onPress: () => { } },
+        {
+            icon: Settings,
+            label: 'Settings',
+            onPress: () => navigation.navigate('Settings' as any)
+        },
+        {
+            icon: Bell,
+            label: 'Notifications',
+            onPress: () => Alert.alert('Notifications', 'Notification preferences coming soon.')
+        },
+        {
+            icon: Shield,
+            label: 'Privacy & Security',
+            onPress: () => Alert.alert('Privacy', 'Privacy settings coming soon.')
+        },
+        {
+            icon: Info,
+            label: 'About',
+            onPress: () => Alert.alert('About', 'Boiler App v1.0.0\nBuilt with Expo & React Native')
+        },
     ];
 
     return (

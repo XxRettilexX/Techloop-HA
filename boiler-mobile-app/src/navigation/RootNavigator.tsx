@@ -2,7 +2,7 @@ import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import { useAuth } from '../contexts/AuthContext';
 import { RootStackParamList } from '../types/navigation';
-import { LoginScreen } from '../screens';
+import { LoginScreen, ProfileScreen, SettingsScreen } from '../screens';
 import { TabNavigator } from './TabNavigator';
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -17,6 +17,20 @@ export const RootNavigator: React.FC = () => {
             ) : (
                 <Stack.Screen name="MainApp" component={TabNavigator} />
             )}
+            <Stack.Screen
+                name="Profile"
+                component={ProfileScreen}
+                options={{
+                    headerShown: true,
+                    headerTitle: 'Profile',
+                    headerBackTitle: 'Back'
+                }}
+            />
+            <Stack.Screen
+                name="Settings"
+                component={SettingsScreen}
+                options={{ headerShown: false }}
+            />
         </Stack.Navigator>
     );
 };

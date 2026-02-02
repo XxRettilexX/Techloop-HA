@@ -9,7 +9,7 @@
 // Server configuration - change this to your server's IP or hostname
 // For local Docker: use localhost or 127.0.0.1
 // For remote server: use the server's IP (e.g., 192.168.1.100 or Tailscale IP)
-const SERVER_HOST = '192.168.1.18'; // Change this to your server IP
+const SERVER_HOST = process.env.EXPO_PUBLIC_SERVER_HOST || 'localhost';
 
 // Docker exposed ports (from docker-compose.yml)
 const PORTS = {

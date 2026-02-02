@@ -11,13 +11,14 @@ export type MainTabParamList = {
     Schedule: undefined;
     Energy: undefined;
     Chat: undefined;
-    Profile: undefined;
 };
 
 // Root Navigator combining Auth and Main App
 export type RootStackParamList = {
     Auth: NavigatorScreenParams<AuthStackParamList>;
     MainApp: NavigatorScreenParams<MainTabParamList>;
+    Profile: undefined;
+    Settings: undefined;
 };
 
 // Declare global navigation types for type-safe navigation

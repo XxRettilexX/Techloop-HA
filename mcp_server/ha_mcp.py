@@ -1,14 +1,14 @@
 from typing import Any
+import os
 import httpx
-from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 
 # Define the MCP Server
 mcp = FastMCP("HomeAssistant-Bridge")
 
-HA_URL = "http://172.28.0.10:8123"
-# In a real scenario, we would use a Long-Lived Access Token. 
-# For this simulation, we assume anonymous or the user will providing the token via ENV.
-HA_TOKEN = "SUPER_SECRET_TOKEN_PLACEHOLDER"
+# Read configuration from environment variables
+HA_URL = os.getenv("HA_URL", "http://172.28.0.10:8123")
+HA_TOKEN = os.getenv("HA_TOKEN", "SUPER_SECRET_TOKEN_PLACEHOLDER")
 
 headers = {
     "Authorization": f"Bearer {HA_TOKEN}",
@@ -62,7 +62,6 @@ async def call_service(domain: str, service: str, entity_id: str) -> str:
         return f"Service called. Status: {resp.status_code}"
 
 if __name__ == "__main__":
-    # In Docker, we can run this as a script that listen on stdio or SSE.
-    # FastMCP defaults to SSE if we run it properly, but here we just expose it.
-    print("Starting MCP Server...")
-    mcp.run()
+    # Run FastMCP server on all interfaces, port 8000
+    print("Starting MCP Server on 0.0.0.0:8000...")
+    mcp.run(transport="sse", host="0.0.0.0", port=8000)

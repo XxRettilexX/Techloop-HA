@@ -1,47 +1,105 @@
 """
-OpenTherm Boiler Simulator - Realistic Implementation
-Simulates a residential boiler with OpenTherm protocol
-Now aligned with AI guardrail limits and realistic physics
+OpenTherm Boiler Simulator - Advanced Realistic Implementation
+Simulates a residential gas boiler with OpenTherm protocol including:
+- Realistic thermal dynamics with hysteresis
+- Anti-legionella cycles
+- Sensor noise and drift
+- Component wear simulation
+- Multiple operating modes
+- Frost protection
 """
 import paho.mqtt.client as mqtt
 import time
 import json
 import random
 import os
+import math
+from datetime import datetime, timedelta
 
 # --- Configuration ---
-BROKER = "172.28.0.20"
+BROKER = os.getenv("MQTT_BROKER", "172.28.0.20")
 PORT = 1883
 TOPIC_BASE = "otgw"
 
 # --- Physics Constants ---
 AMBIENT_TEMP = 20.0  # °C - Room temperature when off
-MAX_WATER_TEMP = 80.0  # °C - Maximum water temperature (safety)
+MAX_WATER_TEMP = 80.0  # °C - Maximum water temperature (safety limit)
 MIN_WATER_TEMP = 30.0  # °C - Minimum water temperature (technical limit)
-HEATING_RATE = 0.8  # °C/s at max modulation
-COOLING_RATE = 0.15  # °C/s natural cooling
-RETURN_DELTA_T = 10.0  # °C - Typical delta T between supply and return
+FROST_PROTECTION_TEMP = 5.0  # °C - Activate frost protection below this
+ANTI_LEGIONELLA_TEMP = 65.0  # °C - Temperature for legionella prevention
+
+# --- Thermal Dynamics ---
+BOILER_THERMAL_MASS = 15.0  # kg water equivalent
+BOILER_POWER_MAX = 24000.0  # W - Maximum burner output
+BOILER_POWER_MIN = 6000.0  # W - Minimum modulation power (25%)
+HEAT_LOSS_COEFFICIENT = 50.0  # W/°C - Heat loss to surroundings
+
+# --- PID Controller Parameters ---
+KP = 5.0  # Proportional gain
+KI = 0.1  # Integral gain  
+KD = 1.0  # Derivative gain
+INTEGRAL_MAX = 100.0  # Anti-windup limit
+
+# --- Hysteresis and Safety ---
+FLAME_ON_HYSTERESIS = 3.0  # °C below setpoint to ignite
+FLAME_OFF_HYSTERESIS = 1.0  # °C above setpoint to extinguish
+MIN_BURNER_ON_TIME = 30  # seconds - Minimum run time once ignited
+MIN_BURNER_OFF_TIME = 180  # seconds - Minimum off time (short-cycle protection)
+MAX_IGNITION_ATTEMPTS = 3
+
+# --- Component Wear ---
+INITIAL_EFFICIENCY = 0.92  # 92% efficiency when new
+EFFICIENCY_DEGRADATION_RATE = 0.00001  # % per hour of operation
 
 # --- Climate Curve Parameters ---
-# Water temperature calculation based on outdoor temperature
-# Warmer water when it's colder outside
-CLIMATE_CURVE_COEFFICIENT = 1.5  # Slope of the curve
+CLIMATE_CURVE_COEFFICIENT = 1.5
 
 # --- State Variables ---
 state = {
-    "boiler_temp": 30.0,  # °C - Current boiler water temperature
-    "return_temp": 25.0,  # °C - Return water temperature  
-    "setpoint": 45.0,  # °C - Water temperature setpoint (30-80°C range)
+    # Temperatures
+    "boiler_temp": 25.0,  # °C - Current boiler water temperature
+    "return_temp": 22.0,  # °C - Return water temperature  
+    "exhaust_temp": 80.0,  # °C - Flue gas temperature
+    "setpoint": 45.0,  # °C - Water temperature setpoint
+    
+    # Modulation and flame
     "modulation": 0.0,  # % - Burner modulation (0-100%)
-    "pressure": 1.5,  # bar - Water pressure
-    "flame_on": False,  # Boolean - Flame status
-    "enabled": True,  # Boolean - Boiler enabled/disabled
-    "outdoor_temp": 10.0,  # °C - Outdoor temperature (from thermal sim)
-    "indoor_temp": 18.0,  # °C - Indoor temperature (from thermal sim)
-    "heating_demand": 0.0,  # % - Heating demand from thermal sim
+    "flame_on": False,
+    "target_modulation": 0.0,
+    
+    # Pressure and flow
+    "pressure": 1.5,  # bar - System water pressure
+    "flow_rate": 0.0,  # L/min - Circulation flow
+    
+    # Operating state
+    "enabled": True,
+    "mode": "standby",  # standby, heating, anti_legionella, frost_protection, error
+    "outdoor_temp": 10.0,
+    "indoor_temp": 18.0,
+    "heating_demand": 0.0,
+    
+    # Control
+    "integral_error": 0.0,
+    "last_error": 0.0,
+    
+    # Timing
+    "burner_on_time": 0,  # seconds since flame on
+    "burner_off_time": 300,  # seconds since flame off (start high to allow ignition)
+    "last_anti_legionella": None,
+    
+    # Diagnostics
+    "ignition_attempts": 0,
+    "total_run_hours": 0.0,
+    "efficiency": INITIAL_EFFICIENCY,
+    "cycles_today": 0,
+    "error_code": None,
+    
+    # Sensor simulation
+    "sensor_noise_temp": 0.0,
+    "sensor_drift_pressure": 0.0,
 }
 
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "OT_Simulator")
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "OT_Simulator_v2")
 
 def on_connect(client, userdata, flags, rc, properties):
     print(f"Connected to MQTT Broker with result code {rc}")
@@ -67,20 +125,22 @@ def on_message(client, userdata, msg):
             mode_cmd = msg.payload.decode().lower()
             print(f"🔧 Mode Command: {mode_cmd}")
             
-            state["enabled"] = mode_cmd not in ["off", "0", "false"]
+            if mode_cmd in ["off", "0", "false"]:
+                state["enabled"] = False
+                state["mode"] = "standby"
+            else:
+                state["enabled"] = True
+                state["mode"] = "heating"
             
-            # Publish state immediately
-            new_mode = "heat" if state["enabled"] else "off"
-            client.publish(f"{TOPIC_BASE}/mode/state", new_mode, retain=True)
+            client.publish(f"{TOPIC_BASE}/mode/state", "heat" if state["enabled"] else "off", retain=True)
             return
         
-        # Setpoint control (water temperature)
+        # Setpoint control
         if msg.topic == f"{TOPIC_BASE}/setpoint/set":
             try:
                 requested_temp = float(msg.payload.decode())
-                # Clamp to realistic water temperature range
                 state["setpoint"] = max(MIN_WATER_TEMP, min(MAX_WATER_TEMP, requested_temp))
-                print(f"🌡️  New Water Setpoint: {state['setpoint']:.1f}°C")
+                print(f"🌡️ New Water Setpoint: {state['setpoint']:.1f}°C")
                 client.publish(f"{TOPIC_BASE}/setpoint/state", state["setpoint"], retain=True)
             except ValueError:
                 print("❌ Invalid setpoint payload")
@@ -89,10 +149,8 @@ def on_message(client, userdata, msg):
         # Thermal simulator data
         if msg.topic == "home/sensor/outdoor_temp":
             state["outdoor_temp"] = float(msg.payload.decode())
-        
         elif msg.topic == "home/sensor/indoor_temp":
             state["indoor_temp"] = float(msg.payload.decode())
-        
         elif msg.topic == "home/heating/demand":
             state["heating_demand"] = float(msg.payload.decode())
     
@@ -101,114 +159,268 @@ def on_message(client, userdata, msg):
 
 def calculate_climate_curve_setpoint():
     """
-    Calculate optimal water temperature based on outdoor temperature
-    Climate compensation curve: colder outside = hotter water needed
+    Calculate optimal water temperature based on outdoor temperature.
+    Climate compensation curve: colder outside = hotter water needed.
     """
-    # Base calculation: T_water = 20 + k * (T_target - T_outdoor)
-    # Where k is the curve coefficient (typically 1.0-2.0)
-    
     target_indoor = 20.0  # °C - Standard comfort temperature
-    
-    # Temperature difference to compensate
     temp_diff = max(0, target_indoor - state["outdoor_temp"])
-    
-    # Calculate water temperature
     water_temp = 35.0 + (CLIMATE_CURVE_COEFFICIENT * temp_diff)
-    
-    # Clamp to safe range
     return max(MIN_WATER_TEMP, min(MAX_WATER_TEMP, water_temp))
 
+def check_anti_legionella():
+    """
+    Check if anti-legionella cycle is needed.
+    Should run weekly to heat DHW to 65°C for legionella prevention.
+    """
+    now = datetime.now()
+    
+    if state["last_anti_legionella"] is None:
+        state["last_anti_legionella"] = now
+        return False
+    
+    # Run every 7 days at 3 AM
+    days_since = (now - state["last_anti_legionella"]).days
+    if days_since >= 7 and now.hour == 3 and state["mode"] != "anti_legionella":
+        print("🦠 Starting Anti-Legionella cycle...")
+        state["mode"] = "anti_legionella"
+        state["last_anti_legionella"] = now
+        return True
+    
+    return False
+
+def check_frost_protection():
+    """
+    Activate frost protection if outdoor temperature is very low.
+    Prevents pipes and boiler from freezing.
+    """
+    if state["outdoor_temp"] < FROST_PROTECTION_TEMP and state["boiler_temp"] < 10:
+        if state["mode"] != "frost_protection":
+            print("❄️ Activating Frost Protection!")
+            state["mode"] = "frost_protection"
+        return True
+    return False
+
+def simulate_sensor_noise():
+    """
+    Add realistic sensor noise and drift to measurements.
+    Temperature sensors typically have ±0.5°C accuracy.
+    Pressure sensors drift over time.
+    """
+    # Temperature noise (Gaussian, small amplitude)
+    state["sensor_noise_temp"] = random.gauss(0, 0.2)
+    
+    # Pressure drift (slow random walk)
+    state["sensor_drift_pressure"] += random.gauss(0, 0.001)
+    state["sensor_drift_pressure"] = max(-0.1, min(0.1, state["sensor_drift_pressure"]))
+
+def calculate_pid_modulation(setpoint, current_temp):
+    """
+    PID controller for modulation with anti-windup.
+    """
+    error = setpoint - current_temp
+    
+    # Proportional
+    p_term = KP * error
+    
+    # Integral (with anti-windup)
+    state["integral_error"] += error
+    state["integral_error"] = max(-INTEGRAL_MAX, min(INTEGRAL_MAX, state["integral_error"]))
+    i_term = KI * state["integral_error"]
+    
+    # Derivative
+    d_term = KD * (error - state["last_error"])
+    state["last_error"] = error
+    
+    # Combine
+    output = p_term + i_term + d_term
+    
+    return max(0, min(100, output))
+
 def update_physics():
-    """Update boiler physics simulation"""
+    """Advanced boiler physics simulation with realistic behavior"""
     
-    if not state["enabled"]:
-        # Boiler is off - modulation goes to zero
-        target_mod = 0.0
+    # Check special modes
+    check_anti_legionella()
+    check_frost_protection()
+    
+    # Simulate sensor noise
+    simulate_sensor_noise()
+    
+    # Determine effective setpoint based on mode
+    if state["mode"] == "anti_legionella":
+        effective_setpoint = ANTI_LEGIONELLA_TEMP
+        # Exit anti-legionella when temperature reached and held
+        if state["boiler_temp"] >= ANTI_LEGIONELLA_TEMP - 2:
+            state["mode"] = "heating" if state["enabled"] else "standby"
+    elif state["mode"] == "frost_protection":
+        effective_setpoint = 35.0  # Keep warm enough to prevent freezing
+        if state["boiler_temp"] > 40 and state["outdoor_temp"] > FROST_PROTECTION_TEMP:
+            state["mode"] = "heating" if state["enabled"] else "standby"
+    elif not state["enabled"]:
+        effective_setpoint = 0
+        state["mode"] = "standby"
     else:
-        # Use climate curve to determine optimal setpoint
-        # (Only if no manual setpoint override)
-        auto_setpoint = calculate_climate_curve_setpoint()
-        
-        # For now, use manual setpoint if set, otherwise auto
-        # In a real system, this would be selectable
         effective_setpoint = state["setpoint"]
-        
-        # PID-like control for modulation
-        # Error between setpoint and current temp
-        error = effective_setpoint - state["boiler_temp"]
-        
-        # Proportional control with softer gain
-        kp = 3.0  # Proportional gain (% per °C error)
-        target_mod = error * kp
-        
-        # Add feedback from heating demand
-        # If house needs more heat, increase modulation
-        demand_contribution = state["heating_demand"] * 0.3
-        target_mod += demand_contribution
-        
-        # Clamp to 0-100%
-        target_mod = max(0.0, min(100.0, target_mod))
+        state["mode"] = "heating"
     
-    # Smooth modulation transitions (rate limiting)
-    mod_rate = 2.0  # % per second max change
-    if target_mod > state["modulation"]:
-        state["modulation"] += min(mod_rate, target_mod - state["modulation"])
-    elif target_mod < state["modulation"]:
-        state["modulation"] -= min(mod_rate, state["modulation"] - target_mod)
+    # Calculate target modulation using PID
+    if state["mode"] in ["heating", "anti_legionella", "frost_protection"]:
+        state["target_modulation"] = calculate_pid_modulation(effective_setpoint, state["boiler_temp"])
+    else:
+        state["target_modulation"] = 0
+        state["integral_error"] = 0  # Reset integral
     
-    # Ensure bounds
-    state["modulation"] = max(0.0, min(100.0, state["modulation"]))
+    # Apply heating demand as a boost factor
+    if state["heating_demand"] > 50:
+        boost = (state["heating_demand"] - 50) * 0.2
+        state["target_modulation"] = min(100, state["target_modulation"] + boost)
     
-    # Flame is on if modulation above minimum
-    state["flame_on"] = state["modulation"] > 5.0
+    # Hysteresis logic for flame control
+    if not state["flame_on"]:
+        # Flame is off - check if we should ignite
+        temp_below_setpoint = effective_setpoint - state["boiler_temp"]
+        
+        if (temp_below_setpoint >= FLAME_ON_HYSTERESIS and 
+            state["target_modulation"] > 20 and
+            state["burner_off_time"] >= MIN_BURNER_OFF_TIME):
+            
+            # Try to ignite
+            state["ignition_attempts"] += 1
+            if state["ignition_attempts"] <= MAX_IGNITION_ATTEMPTS:
+                state["flame_on"] = True
+                state["burner_on_time"] = 0
+                state["cycles_today"] += 1
+                print(f"🔥 Ignition successful (attempt {state['ignition_attempts']})")
+            else:
+                state["error_code"] = "E01"  # Ignition failure
+                state["mode"] = "error"
+                print("⚠️ ERROR: Too many ignition attempts!")
+        else:
+            state["burner_off_time"] += 1
+            state["ignition_attempts"] = 0  # Reset after cooldown
+    else:
+        # Flame is on
+        state["burner_on_time"] += 1
+        state["burner_off_time"] = 0
+        
+        # Check if we should extinguish (with minimum run time)
+        temp_above_setpoint = state["boiler_temp"] - effective_setpoint
+        
+        if (temp_above_setpoint >= FLAME_OFF_HYSTERESIS and 
+            state["burner_on_time"] >= MIN_BURNER_ON_TIME):
+            state["flame_on"] = False
+            print("⚫ Flame off - setpoint reached")
+        elif state["target_modulation"] < 5 and state["burner_on_time"] >= MIN_BURNER_ON_TIME:
+            state["flame_on"] = False
+            print("⚫ Flame off - no demand")
+    
+    # Smooth modulation transitions
+    mod_rate = 3.0  # % per second max change
+    if state["flame_on"]:
+        # Ramp up/down to target
+        if state["modulation"] < state["target_modulation"]:
+            state["modulation"] = min(state["target_modulation"], state["modulation"] + mod_rate)
+        else:
+            state["modulation"] = max(state["target_modulation"], state["modulation"] - mod_rate)
+        # Enforce minimum modulation when burning
+        state["modulation"] = max(25, state["modulation"])  # Min 25% when flame on
+    else:
+        # Ramp down to zero
+        state["modulation"] = max(0, state["modulation"] - mod_rate * 2)
     
     # Temperature physics
-    if state["flame_on"]:
-        # Heat added proportional to modulation
-        heat_input = (state["modulation"] / 100.0) * HEATING_RATE
-        state["boiler_temp"] += heat_input
+    dt = 1.0  # 1 second timestep
     
-    # Natural cooling (heat loss to environment and circuit)
-    cooling = COOLING_RATE
+    if state["flame_on"] and state["modulation"] > 0:
+        # Heat input (W)
+        heat_input = BOILER_POWER_MIN + (BOILER_POWER_MAX - BOILER_POWER_MIN) * (state["modulation"] / 100.0)
+        heat_input *= state["efficiency"]  # Apply efficiency
+        
+        # Track run hours
+        state["total_run_hours"] += dt / 3600.0
+        
+        # Degrade efficiency slowly
+        state["efficiency"] = max(0.80, INITIAL_EFFICIENCY - (state["total_run_hours"] * EFFICIENCY_DEGRADATION_RATE))
+    else:
+        heat_input = 0
     
-    # Increased cooling when circulating (pump on)
-    if state["heating_demand"] > 10:
-        cooling *= 1.5  # More heat transferred to radiators
+    # Heat loss (W) - depends on temperature difference to ambient
+    heat_loss = HEAT_LOSS_COEFFICIENT * (state["boiler_temp"] - AMBIENT_TEMP)
     
-    state["boiler_temp"] -= cooling
+    # Heat extracted by heating circuit (when circulating)
+    if state["heating_demand"] > 5:
+        # More heat extracted when demand is higher
+        circuit_extraction = 1000 + state["heating_demand"] * 50  # W
+        state["flow_rate"] = 8 + state["heating_demand"] * 0.12  # L/min
+    else:
+        circuit_extraction = 200  # Minimal standby losses
+        state["flow_rate"] = 0
     
-    # Return temperature follows boiler with lag
-    target_return = state["boiler_temp"] - RETURN_DELTA_T
-    state["return_temp"] += (target_return - state["return_temp"]) * 0.1
+    # Net heat change
+    net_heat = heat_input - heat_loss - circuit_extraction
     
-    # Pressure variation (realistic)
-    # Pressure increases slightly with temperature
-    noise = random.uniform(-0.01, 0.01)
-    base_pressure = 1.5 + ((state["boiler_temp"] - 30) * 0.003)
-    state["pressure"] = round(base_pressure + noise, 2)
+    # Temperature change: ΔT = Q * dt / (m * cp)
+    # Assuming water: cp = 4186 J/(kg·°C)
+    delta_temp = (net_heat * dt) / (BOILER_THERMAL_MASS * 4186)
+    state["boiler_temp"] += delta_temp
+    
+    # Return temperature follows supply with lag and delta-T
+    target_delta_t = 10 + (state["modulation"] / 100) * 10  # 10-20°C delta
+    target_return = state["boiler_temp"] - target_delta_t
+    state["return_temp"] += (target_return - state["return_temp"]) * 0.05  # Slow lag
+    
+    # Exhaust temperature (higher with more modulation)
+    state["exhaust_temp"] = 50 + state["modulation"] * 1.5 + random.gauss(0, 2)
+    
+    # Pressure variation (increases with temperature, natural noise)
+    base_pressure = 1.3 + ((state["boiler_temp"] - 20) * 0.008)
+    state["pressure"] = base_pressure + state["sensor_drift_pressure"] + random.gauss(0, 0.02)
     
     # Safety limits
-    state["boiler_temp"] = max(AMBIENT_TEMP, min(MAX_WATER_TEMP, state["boiler_temp"]))
-    state["return_temp"] = max(AMBIENT_TEMP, min(MAX_WATER_TEMP, state["return_temp"]))
-    state["pressure"] = max(0.5, min(3.0, state["pressure"]))
+    state["boiler_temp"] = max(10, min(MAX_WATER_TEMP + 5, state["boiler_temp"]))  # Allow slight overshoot for realism
+    state["return_temp"] = max(10, min(state["boiler_temp"], state["return_temp"]))
+    state["pressure"] = max(0.3, min(3.5, state["pressure"]))
+    
+    # High limit safety
+    if state["boiler_temp"] > MAX_WATER_TEMP:
+        state["flame_on"] = False
+        state["modulation"] = 0
+        if state["boiler_temp"] > MAX_WATER_TEMP + 3:
+            state["error_code"] = "E02"  # Overheat
+            state["mode"] = "error"
+            print("⚠️ SAFETY: Overtemperature lockout!")
 
 def publish_telemetry():
-    """Publish boiler telemetry to MQTT"""
-    client.publish(f"{TOPIC_BASE}/status/boiler_temp", round(state["boiler_temp"], 1))
-    client.publish(f"{TOPIC_BASE}/status/return_temp", round(state["return_temp"], 1))
-    client.publish(f"{TOPIC_BASE}/status/modulation", int(state["modulation"]))
-    client.publish(f"{TOPIC_BASE}/status/pressure", state["pressure"])
-    client.publish(f"{TOPIC_BASE}/status/flame", "ON" if state["flame_on"] else "OFF")
-    client.publish(f"{TOPIC_BASE}/mode/state", "heat" if state["enabled"] else "off")
+    """Publish comprehensive boiler telemetry to MQTT"""
+    # Core values (with simulated sensor noise)
+    reported_temp = round(state["boiler_temp"] + state["sensor_noise_temp"], 1)
+    reported_return = round(state["return_temp"] + state["sensor_noise_temp"] * 0.5, 1)
     
-    # Publish diagnostic info
+    client.publish(f"{TOPIC_BASE}/status/boiler_temp", reported_temp)
+    client.publish(f"{TOPIC_BASE}/status/return_temp", reported_return)
+    client.publish(f"{TOPIC_BASE}/status/modulation", int(state["modulation"]))
+    client.publish(f"{TOPIC_BASE}/status/pressure", round(state["pressure"], 2))
+    client.publish(f"{TOPIC_BASE}/status/flame", "ON" if state["flame_on"] else "OFF")
+    client.publish(f"{TOPIC_BASE}/mode/state", state["mode"])
+    
+    # Extended diagnostics
     diagnostics = {
-        "boiler_temp": round(state["boiler_temp"], 1),
+        "boiler_temp": reported_temp,
+        "return_temp": reported_return,
+        "exhaust_temp": round(state["exhaust_temp"], 1),
         "setpoint": round(state["setpoint"], 1),
         "modulation": int(state["modulation"]),
+        "target_modulation": int(state["target_modulation"]),
         "flame": state["flame_on"],
+        "mode": state["mode"],
+        "pressure": round(state["pressure"], 2),
+        "flow_rate": round(state["flow_rate"], 1),
         "outdoor_temp": round(state["outdoor_temp"], 1),
-        "heating_demand": round(state["heating_demand"], 1)
+        "heating_demand": round(state["heating_demand"], 1),
+        "efficiency": round(state["efficiency"] * 100, 1),
+        "run_hours": round(state["total_run_hours"], 1),
+        "cycles_today": state["cycles_today"],
+        "error_code": state["error_code"]
     }
     client.publish(f"{TOPIC_BASE}/diagnostics", json.dumps(diagnostics))
 
@@ -230,40 +442,53 @@ client.loop_start()
 
 # Initial state publish
 client.publish(f"{TOPIC_BASE}/setpoint/state", state["setpoint"], retain=True)
-client.publish(f"{TOPIC_BASE}/mode/state", "heat" if state["enabled"] else "off", retain=True)
+client.publish(f"{TOPIC_BASE}/mode/state", state["mode"], retain=True)
 
-print("\n" + "="*60)
-print("🔥 OpenTherm Boiler Simulator (Realistic)")
-print("="*60)
-print(f"Water Temperature: {state['boiler_temp']:.1f}°C")
-print(f"Setpoint: {state['setpoint']:.1f}°C")
+print("\n" + "="*70)
+print("🔥 OPENTHERM BOILER SIMULATOR v2.0 - Advanced Realistic Physics")
+print("="*70)
+print(f"Max Power: {BOILER_POWER_MAX/1000:.0f} kW | Min Modulation: 25%")
 print(f"Water Temp Range: {MIN_WATER_TEMP}-{MAX_WATER_TEMP}°C")
-print(f"Climate Curve Coefficient: {CLIMATE_CURVE_COEFFICIENT}")
-print("="*60)
-print("\nIntegrated with Thermal Simulator for realistic behavior")
-print("="*60 + "\n")
+print(f"Initial Efficiency: {state['efficiency']*100:.0f}%")
+print(f"Short-cycle Protection: {MIN_BURNER_OFF_TIME}s off, {MIN_BURNER_ON_TIME}s on minimum")
+print(f"Hysteresis: +{FLAME_OFF_HYSTERESIS}°C off, -{FLAME_ON_HYSTERESIS}°C on")
+print("="*70)
+print("Features: PID control, anti-legionella, frost protection, wear simulation")
+print("="*70 + "\n")
 
 # Main loop
 last_print = time.time()
+last_daily_reset = datetime.now().date()
 
 try:
     while True:
+        # Daily reset of cycle counter
+        if datetime.now().date() != last_daily_reset:
+            state["cycles_today"] = 0
+            last_daily_reset = datetime.now().date()
+        
         update_physics()
         publish_telemetry()
         
         # Print status every 10 seconds
         if time.time() - last_print > 10:
             flame_icon = "🔥" if state["flame_on"] else "⚫"
-            print(f"{flame_icon} Water: {state['boiler_temp']:.1f}°C | " +
-                  f"Setpoint: {state['setpoint']:.1f}°C | " +
-                  f"Mod: {state['modulation']:.0f}% | " +
-                  f"Demand: {state['heating_demand']:.0f}% | " +
-                  f"Outdoor: {state['outdoor_temp']:.1f}°C")
+            mode_icon = {"heating": "♨️", "standby": "💤", "anti_legionella": "🦠", 
+                        "frost_protection": "❄️", "error": "⚠️"}.get(state["mode"], "❓")
+            
+            print(f"{flame_icon} {mode_icon} Water: {state['boiler_temp']:.1f}°C | "
+                  f"SP: {state['setpoint']:.1f}°C | "
+                  f"Mod: {state['modulation']:.0f}% | "
+                  f"Pressure: {state['pressure']:.2f}bar | "
+                  f"Demand: {state['heating_demand']:.0f}% | "
+                  f"η: {state['efficiency']*100:.1f}%")
             last_print = time.time()
         
         time.sleep(1)
 
 except KeyboardInterrupt:
-    print("\n👋 Shutting down OpenTherm Boiler Simulator...")
+    print("\n👋 Shutting down OpenTherm Boiler Simulator v2.0...")
+    print(f"   Total run hours: {state['total_run_hours']:.1f}h")
+    print(f"   Final efficiency: {state['efficiency']*100:.1f}%")
     client.loop_stop()
     client.disconnect()

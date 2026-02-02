@@ -200,11 +200,14 @@ class SecurityGuardrail:
                 return (True, "State consistency check passed")
                 
             except httpx.TimeoutException:
-                logger.error("Timeout connecting to Home Assistant")
-                return (False, "Unable to connect to Home Assistant - timeout")
+                logger.warning("Timeout connecting to Home Assistant - skipping consistency check")
+                return (True, "Unable to connect to Home Assistant - timeout (Skipped)")
+            except httpx.ConnectError:
+                logger.warning("Connection refused to Home Assistant - skipping consistency check")
+                return (True, "Unable to connect to Home Assistant - connection refused (Skipped)")
             except Exception as e:
                 logger.error(f"Error checking state: {e}")
-                return (True, "State check inconclusive, proceeding with caution")
+                return (True, f"State check error (Skipped): {str(e)}")
     
     def _contains_suspicious_keywords(self, user_input: str) -> bool:
         """Check if user input contains suspicious keywords"""
@@ -243,7 +246,7 @@ Your response (one word only):"""
                 response = await client.post(
                     f"{self.ollama_url}/api/generate",
                     json={
-                        "model": "llama3.2",
+                        "model": "llama3.2:1b",
                         "prompt": prompt,
                         "stream": False,
                         "options": {

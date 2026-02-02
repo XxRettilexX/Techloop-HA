@@ -2,18 +2,23 @@
 Mobile API Service - MQTT-Based Architecture
 Connects directly to MQTT simulators, no Home Assistant dependency
 Uses PocketBase for persistence
+Supports SSE streaming for real-time chat responses
 """
 import os
 import logging
 import asyncio
 import threading
+import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from fastapi import FastAPI, WebSocket, HTTPException, WebSocketDisconnect, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel
 import paho.mqtt.client as mqtt
+import httpx
 
 from .pocketbase import pb_client
 
@@ -316,22 +321,183 @@ async def get_environment():
 
 @app.post("/api/chat")
 async def chat(message: ChatMessage):
-    """Send message to chatbot"""
+    """Send message to chatbot and execute actions"""
     import httpx
+    
+    # Build context from MQTT cache for the LLM
+    context = {
+        "boiler_temp": mqtt_cache.get("boiler_temp"),
+        "return_temp": mqtt_cache.get("return_temp"),
+        "pressure": mqtt_cache.get("pressure"),
+        "mode": mqtt_cache.get("mode"),
+        "setpoint": mqtt_cache.get("setpoint"),
+        "indoor_temp": mqtt_cache.get("indoor_temp"),
+        "outdoor_temp": mqtt_cache.get("outdoor_temp"),
+        "water_temp": mqtt_cache.get("boiler_temp") # Alias
+    }
+    
     try:
         async with httpx.AsyncClient() as client:
+            # Send message + context to chatbot
             response = await client.post(
                 f"{CHATBOT_URL}/chat",
-                json={"message": message.message, "entity_id": message.entity_id},
+                json={
+                    "message": message.message, 
+                    "entity_id": message.entity_id,
+                    "context": context
+                },
                 timeout=30.0
             )
-            if response.status_code == 200:
-                return response.json()
-            else:
+            
+            if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail="Chatbot error")
+                
+            chat_response = response.json()
+            
+            # Execute action if validated and action_taken is set
+            if chat_response.get("validated") and chat_response.get("intent"):
+                intent = chat_response["intent"]
+                action = intent.get("action")
+                value = intent.get("value")
+                
+                # Verify MQTT status
+                if not mqtt_client:
+                    logger.warning("MQTT not connected, cannot execute chatbot action")
+                else:
+                    if action == "set_temperature" and value is not None:
+                         # Clamp and publish
+                         temp = max(30.0, min(80.0, float(value)))
+                         mqtt_client.publish(TOPICS["setpoint_set"], str(temp))
+                         logger.info(f"🤖 Chatbot set temperature to {temp}°C")
+                    
+                    elif action == "turn_on":
+                         mqtt_client.publish(TOPICS["mode_set"], "heat")
+                         logger.info(f"🤖 Chatbot turned boiler ON")
+                         
+                    elif action == "turn_off":
+                         mqtt_client.publish(TOPICS["mode_set"], "off")
+                         logger.info(f"🤖 Chatbot turned boiler OFF")
+            
+            return chat_response
+
     except Exception as e:
         logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat/fast")
+async def chat_fast(message: ChatMessage):
+    """
+    Fast chat endpoint using pattern matching when possible.
+    Faster than full LLM processing for common commands.
+    """
+    context = {
+        "boiler_temp": mqtt_cache.get("boiler_temp"),
+        "return_temp": mqtt_cache.get("return_temp"),
+        "pressure": mqtt_cache.get("pressure"),
+        "mode": mqtt_cache.get("mode"),
+        "setpoint": mqtt_cache.get("setpoint"),
+        "indoor_temp": mqtt_cache.get("indoor_temp"),
+        "outdoor_temp": mqtt_cache.get("outdoor_temp"),
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{CHATBOT_URL}/chat/fast",
+                json={
+                    "message": message.message,
+                    "entity_id": message.entity_id,
+                    "context": context
+                },
+                timeout=15.0
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Chatbot error")
+            
+            chat_response = response.json()
+            
+            # Execute action if validated
+            if chat_response.get("validated") and chat_response.get("intent"):
+                intent = chat_response["intent"]
+                action = intent.get("action")
+                value = intent.get("value")
+                
+                if mqtt_client and action in ["set_temperature", "turn_on", "turn_off"]:
+                    if action == "set_temperature" and value is not None:
+                        temp = max(30.0, min(80.0, float(value)))
+                        mqtt_client.publish(TOPICS["setpoint_set"], str(temp))
+                    elif action == "turn_on":
+                        mqtt_client.publish(TOPICS["mode_set"], "heat")
+                    elif action == "turn_off":
+                        mqtt_client.publish(TOPICS["mode_set"], "off")
+            
+            return chat_response
+            
+    except Exception as e:
+        logger.error(f"Fast chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/chat/stream")
+async def chat_stream(message: ChatMessage):
+    """
+    SSE streaming chat endpoint for real-time responses.
+    Returns Server-Sent Events as the LLM generates tokens.
+    
+    Use EventSource in the client:
+    ```javascript
+    const es = new EventSource('/api/chat/stream', {method: 'POST', body: ...});
+    es.onmessage = (e) => { const data = JSON.parse(e.data); ... };
+    ```
+    """
+    context = {
+        "boiler_temp": mqtt_cache.get("boiler_temp"),
+        "return_temp": mqtt_cache.get("return_temp"),
+        "pressure": mqtt_cache.get("pressure"),
+        "mode": mqtt_cache.get("mode"),
+        "setpoint": mqtt_cache.get("setpoint"),
+        "indoor_temp": mqtt_cache.get("indoor_temp"),
+        "outdoor_temp": mqtt_cache.get("outdoor_temp"),
+    }
+    
+    async def event_generator():
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    "POST",
+                    f"{CHATBOT_URL}/chat/stream",
+                    json={"message": message.message, "context": context},
+                    timeout=60.0
+                ) as response:
+                    async for line in response.aiter_lines():
+                        if line.startswith("data:"):
+                            data_str = line[5:].strip()
+                            try:
+                                data = json.loads(data_str)
+                                
+                                # Execute action if done and validated
+                                if data.get("type") == "done":
+                                    intent = data.get("intent", {})
+                                    action = intent.get("action")
+                                    value = intent.get("value")
+                                    
+                                    if data.get("validated") and mqtt_client:
+                                        if action == "set_temperature" and value:
+                                            temp = max(30.0, min(80.0, float(value)))
+                                            mqtt_client.publish(TOPICS["setpoint_set"], str(temp))
+                                        elif action == "turn_on":
+                                            mqtt_client.publish(TOPICS["mode_set"], "heat")
+                                        elif action == "turn_off":
+                                            mqtt_client.publish(TOPICS["mode_set"], "off")
+                                
+                                yield {"event": "message", "data": data_str}
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as e:
+            logger.error(f"Stream error: {e}")
+            yield {"event": "message", "data": json.dumps({"type": "error", "message": str(e)})}
+    
+    return EventSourceResponse(event_generator())
 
 # ==================== PocketBase Endpoints ====================
 

@@ -2,8 +2,8 @@ import React from 'react';
 import { StyleSheet, ScrollView, View, Text, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Menu, User, Lightbulb, TrendingDown } from 'lucide-react-native';
-import { EnergyBarChart, ConnectionStatusBar } from '../components';
+import { Lightbulb, TrendingDown } from 'lucide-react-native';
+import { EnergyBarChart, ConnectionStatusBar, Header } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../theme';
 import { useEnergyData } from '../contexts/DataContext';
 
@@ -23,15 +23,7 @@ export const EnergyScreen: React.FC = () => {
             <ConnectionStatusBar />
 
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.headerButton} activeOpacity={0.7}>
-                    <Menu size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Energy</Text>
-                <TouchableOpacity style={styles.headerButton} activeOpacity={0.7}>
-                    <User size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-            </View>
+            <Header title="Energy" />
 
             <ScrollView
                 style={styles.scrollView}

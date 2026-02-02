@@ -5,16 +5,16 @@
 
 export const COLORS = {
     // Primary palette (mandatory)
-    background: '#aaabbc',      // Grigio Lavanda - Main background
-    textSecondary: '#8b8982',   // Taupe/Oliva - Secondary text
-    textPrimary: '#373f47',     // Antracite scuro - Primary text
-    primary: '#6c91c2',         // Blu Acciaio - Primary actions/active state
-    cardBg: '#c3c9e9',          // Periwinkle chiaro - Card backgrounds/highlights
+    background: '#FFFFFF',      // Slate Blue - Main background
+    textSecondary: '#2F3E46',   // Dark Charcoal - Secondary text
+    textPrimary: '#00120b',     // Rich Black - Primary text
+    primary: '#5171A5',         // Dark Cyan - Primary actions/active state
+    cardBg: '#FFFFFF',          // White - Card backgrounds/highlights
 
     // Additional UI tokens
-    accent: '#4A7BA7',          // Darker blue for accents
-    surface: '#c3c9e9',         // Same as cardBg - surface backgrounds
-    text: '#373f47',            // Primary text (alias for textPrimary)
+    accent: '#35605a',          // Dark Cyan (same as primary) for accents
+    surface: '#FFFFFF',         // White - surface backgrounds
+    text: '#00120b',            // Primary text (alias for textPrimary)
     border: '#9CA3AF',          // Border color
     disabled: '#b0b0b0',        // Disabled state color
 

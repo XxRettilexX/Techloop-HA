@@ -119,7 +119,7 @@ class ChatService {
     async sendMessage(message: string, entityId: string = 'climate.boiler'): Promise<ChatResponse> {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
 
             const response = await fetch(`${this.mobileApiUrl}/chat`, {
                 method: 'POST',
@@ -140,8 +140,15 @@ class ChatService {
             this.responseCache.set(message.toLowerCase().trim(), data);
 
             return data;
-        } catch (error) {
-            console.log('Chat API unavailable, using fallback');
+        } catch (error: any) {
+            console.log('Chat API unavailable or timed out', error.name);
+
+            // Propagate AbortError (timeout) so UI can handle it specifically
+            if (error.name === 'AbortError') {
+                throw error;
+            }
+
+            console.log('Using fallback response');
 
             // Try cached response
             const cached = this.findCachedResponse(message);
@@ -152,7 +159,10 @@ class ChatService {
             // Try direct chatbot
             try {
                 return await this.sendMessageDirect(message, entityId);
-            } catch {
+            } catch (directError: any) {
+                if (directError.name === 'AbortError') {
+                    throw directError;
+                }
                 return DEFAULT_FALLBACK;
             }
         }
@@ -163,7 +173,7 @@ class ChatService {
      */
     async sendMessageDirect(message: string, entityId: string = 'climate.boiler'): Promise<ChatResponse> {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const timeoutId = setTimeout(() => controller.abort(), 60000);
 
         try {
             const response = await fetch(`${this.chatbotUrl}/chat`, {

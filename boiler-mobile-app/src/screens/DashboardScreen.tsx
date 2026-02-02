@@ -8,6 +8,7 @@ import {
     StatusBanner,
     HotWaterCard,
     ConnectionStatusBar,
+    Header,
 } from '../components';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS, BORDER_RADIUS } from '../theme';
 import { useBoilerStatus, useRoomStatus, useConnectionStatus } from '../contexts/DataContext';
@@ -31,15 +32,7 @@ export const DashboardScreen: React.FC = () => {
             <ConnectionStatusBar />
 
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.headerButton} activeOpacity={0.7}>
-                    <Menu size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Dashboard</Text>
-                <TouchableOpacity style={styles.headerButton} activeOpacity={0.7}>
-                    <User size={24} color={COLORS.textPrimary} />
-                </TouchableOpacity>
-            </View>
+            <Header title="Dashboard" />
 
             <ScrollView
                 style={styles.scrollView}
@@ -64,7 +57,7 @@ export const DashboardScreen: React.FC = () => {
                 {/* Status Banner */}
                 <StatusBanner
                     status="active"
-                    message={boilerStatus.flameOn ? "Il sistema funziona correttamente" : "Sistema in standby"}
+                    message={boilerStatus.flame_on ? "Il sistema funziona correttamente" : "Sistema in standby"}
                 />
             </ScrollView>
         </SafeAreaView>
